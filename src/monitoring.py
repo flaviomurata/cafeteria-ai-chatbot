@@ -106,8 +106,14 @@ class RequestTimer:
 # print('=== STRUCTURED LOGGING ===')
 # print()
 # logger.info('Application starting')
-# logger.info('Processing request', extra={'extra_data': {'user_id': 'user-123', 'thread_id': 'thread-456'}})
-# logger.warning('Rate limit approaching', extra={'extra_data': {'current_rate': 18, 'limit': 20}})
+# logger.info(
+#     'Processing request',
+#     extra={'extra_data': {'user_id': 'user-123', 'thread_id': 'thread-456'}},
+# )
+# logger.warning(
+#     'Rate limit approaching',
+#     extra={'extra_data': {'current_rate': 18, 'limit': 20}},
+# )
 #
 # print()
 # print('=== METRICS COLLECTION ===')
@@ -116,12 +122,16 @@ class RequestTimer:
 # # Simulate some requests
 # with RequestTimer() as timer:
 #     time.sleep(0.1)  # Simulate work
-# metrics.record_request(latency_ms=timer.elapsed_ms, input_tokens=50, output_tokens=100, cache_hit=False)
+# metrics.record_request(
+#     latency_ms=timer.elapsed_ms, input_tokens=50, output_tokens=100, cache_hit=False
+# )
 # print(f'Request 1: {timer.elapsed_ms:.1f}ms')
 #
 # with RequestTimer() as timer:
 #     time.sleep(0.05)
-# metrics.record_request(latency_ms=timer.elapsed_ms, input_tokens=30, output_tokens=80, cache_hit=True)
+# metrics.record_request(
+#     latency_ms=timer.elapsed_ms, input_tokens=30, output_tokens=80, cache_hit=True
+# )
 # print(f'Request 2: {timer.elapsed_ms:.1f}ms (cache hit)')
 #
 # metrics.record_request(latency_ms=5.0, error=True)
