@@ -1,6 +1,5 @@
 import hashlib
 import time
-from typing import Optional
 
 
 class ResponseCache:
@@ -16,7 +15,7 @@ class ResponseCache:
 
     # 'What is Python?' and 'what is python?'
 
-    def get(self, query: str) -> Optional[str]:
+    def get(self, query: str) -> str | None:
         key = self._make_key(query)
 
         if key in self._cache:

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
@@ -23,9 +23,7 @@ class ChatResponse(BaseModel):
     cached: bool = False
     processing_time_ms: float
     security_notes: list[str] = Field(default_factory=list)
-    timestamp: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class HealthResponse(BaseModel):
