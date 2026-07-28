@@ -10,6 +10,21 @@ from typing_extensions import Annotated, TypedDict
 from src.config import get_settings
 
 
+def _extract_text(content: str | list) -> str:
+    """Normalize AIMessage.content, which some models return as a list of
+    content blocks (e.g. [{"type": "text", "text": "..."}]) instead of a str."""
+    if isinstance(content, str):
+        return content
+
+    parts = []
+    for block in content:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, dict) and "text" in block:
+            parts.append(block["text"])
+    return "".join(parts)
+
+
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     error: Optional[str]
@@ -129,7 +144,7 @@ class ProductionAgent:
         )
 
         return {
-            "response": result["messages"][-1].content,
+            "response": _extract_text(result["messages"][-1].content),
             "model_used": result.get("model_used", "unknown"),
             "error": result.get("error"),
         }

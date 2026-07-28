@@ -2,7 +2,7 @@ default:
   just --list
 
 run *args:
-  uv run fastapi dev src/main.py
+  uv run uvicorn src.main:app --reload {{args}}
 
 ruff *args:
   uv run ruff check {{args}} src
