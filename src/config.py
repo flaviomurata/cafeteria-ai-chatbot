@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings
@@ -10,7 +11,7 @@ class Settings(BaseSettings):
 
     langchain_tracing_v2: bool = True
     langchain_api_key: str = ""
-    lanchain_project: str = "production-api"
+    langchain_project: str = "production-api"
 
     app_env: str = "development"
     log_level: str = "INFO"
@@ -30,4 +31,10 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+
+    os.environ["LANGCHAIN_TRACING_V2"] = str(settings.langchain_tracing_v2).lower()
+    os.environ["LANGCHAIN_API_KEY"] = settings.langchain_api_key
+    os.environ["LANGCHAIN_PROJECT"] = settings.langchain_project
+
+    return settings
