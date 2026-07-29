@@ -135,6 +135,23 @@ async def chat(
                 detail="Your message was blocked by our security filters.",
             )
 
+        # Sanitizing strips delimiter runs, so a message that passed validation
+        # can still end up empty (e.g. "---"). Don't hand that to the agent.
+        if not cleaned_message:
+            logger.warning(
+                "Request empty after sanitization",
+                extra={
+                    "extra_data": {
+                        "thread_id": body.thread_id,
+                    }
+                },
+            )
+            metrics.record_request(latency_ms=0, error=True)
+            raise HTTPException(
+                status_code=400,
+                detail="Your message was empty after sanitization.",
+            )
+
         # ---- Step 2: Cache Lookup ----
         cached_response = cache.get(cleaned_message)
         if cached_response is not None:
@@ -147,13 +164,14 @@ async def chat(
                     }
                 },
             )
-            return ChatResponse(
-                response=cached_response,
-                thread_id=body.thread_id,
-                model_used="cache",
-                cached=True,
-                processing_time_ms=0,
-            )
+            return {
+                "response": cached_response,
+                "thread_id": body.thread_id,
+                "model_used": "cache",
+                "cached": True,
+                "processing_time_ms": 0,
+                "security_notes": security_notes,
+            }
 
         # ---- Step 3: Invoke LangGraph Agent ----
         try:
@@ -217,14 +235,14 @@ async def chat(
         },
     )
 
-    return ChatResponse(
-        response=validated_response,
-        thread_id=body.thread_id,
-        model_used=model_used,
-        cached=False,
-        processing_time_ms=round(timer.elapsed_ms, 2),
-        security_notes=security_notes,
-    )
+    return {
+        "response": validated_response,
+        "thread_id": body.thread_id,
+        "model_used": model_used,
+        "cached": False,
+        "processing_time_ms": round(timer.elapsed_ms, 2),
+        "security_notes": security_notes,
+    }
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -239,16 +257,16 @@ async def health(request: Request):
 
     all_healthy = all(checks.values())
 
-    return HealthResponse(
-        status="healthy" if all_healthy else "degraded",
-        environment=settings.app_env,
-        checks=checks,
-    )
+    return {
+        "status": "healthy" if all_healthy else "degraded",
+        "environment": settings.app_env,
+        "checks": checks,
+    }
 
 
 @app.get("/metrics", response_model=MetricsResponse)
 async def metrics_endpoint(metrics: MetricsCollector = Depends(get_metrics)):
-    return MetricsResponse(**metrics.summary)
+    return metrics.summary
 
 
 @app.get("/cache/stats")

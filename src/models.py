@@ -1,13 +1,19 @@
 from datetime import UTC, datetime
+from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
+
+# Whitespace is stripped before the length checks run, so a blank message is a
+# 422 rather than an empty prompt forwarded to the agent.
+MessageStr = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=10000),
+]
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(
+    message: MessageStr = Field(
         ...,
-        min_length=1,
-        max_length=10000,
         description="User's message to the agent",
     )
     thread_id: str = Field(
