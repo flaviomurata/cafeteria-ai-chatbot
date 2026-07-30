@@ -47,10 +47,28 @@ def test_persistent_chroma_retriever_accepts_a_readable_chroma_index(tmp_path: P
     index_path = tmp_path / "index"
     index_path.mkdir()
     client = chromadb.PersistentClient(path=str(index_path))
-    client.get_or_create_collection("partner_knowledge")
+    collection = client.get_or_create_collection("partner_knowledge")
+    collection.add(
+        ids=["catalog-product-1"],
+        documents=["Coffee beans are approved for Partner orders."],
+        embeddings=[[0.1, 0.2, 0.3]],
+    )
     retriever = PersistentChromaRetriever(index_path)
 
     retriever.ensure_available()
+
+
+def test_persistent_chroma_retriever_rejects_an_empty_index(tmp_path: Path):
+    index_path = tmp_path / "index"
+    chromadb.PersistentClient(path=str(index_path)).get_or_create_collection(
+        "partner_knowledge"
+    )
+    retriever = PersistentChromaRetriever(index_path)
+
+    with pytest.raises(
+        PartnerKnowledgeIndexUnavailableError, match="no indexed records"
+    ):
+        retriever.ensure_available()
 
 
 def test_persistent_chroma_retriever_rejects_an_invalid_chroma_database(

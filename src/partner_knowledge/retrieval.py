@@ -25,6 +25,8 @@ class PersistentChromaRetriever:
     changes.
     """
 
+    _COLLECTION_NAME = "partner_knowledge"
+
     def __init__(self, index_path: Path):
         self._index_path = index_path
 
@@ -51,7 +53,12 @@ class PersistentChromaRetriever:
 
         try:
             client = chromadb.PersistentClient(path=str(self._index_path))
-            client.list_collections()
+            collection = client.get_collection(self._COLLECTION_NAME)
+            if collection.count() == 0:
+                raise PartnerKnowledgeIndexUnavailableError(
+                    "Partner knowledge index contains no indexed records at "
+                    f"{self._index_path}."
+                )
         except (ChromaError, OSError, ValueError) as exc:
             raise PartnerKnowledgeIndexUnavailableError(
                 f"Partner knowledge index is unreadable at {self._index_path}."
