@@ -28,6 +28,13 @@ from src.partner_knowledge.retrieval import (
     PersistentChromaRetriever,
     RetrievedEvidence,
 )
+from src.partner_knowledge.verification import (
+    EvidenceVerifier,
+    MaterialClaim,
+    ProductionEvidenceVerifier,
+    VerificationResult,
+    claim_links_are_valid,
+)
 from src.security import SecurityPipeline
 
 load_dotenv()
@@ -53,6 +60,10 @@ def get_agent(request: Request) -> ProductionAgent:
 
 def get_partner_knowledge_retriever(request: Request) -> PartnerKnowledgeRetriever:
     return request.app.state.partner_knowledge_retriever
+
+
+def get_evidence_verifier(request: Request) -> EvidenceVerifier:
+    return request.app.state.evidence_verifier
 
 
 @asynccontextmanager
@@ -83,6 +94,7 @@ async def lifespan(app: FastAPI):
     )
     await run_in_threadpool(app.state.partner_knowledge_retriever.ensure_available)
     app.state.agent = ProductionAgent()
+    app.state.evidence_verifier = ProductionEvidenceVerifier()
 
     logger.info("All components initialized. Ready to serve requests.")
 
@@ -137,6 +149,7 @@ async def chat(
     partner_knowledge_retriever: Annotated[
         PartnerKnowledgeRetriever, Depends(get_partner_knowledge_retriever)
     ],
+    evidence_verifier: Annotated[EvidenceVerifier, Depends(get_evidence_verifier)],
 ):
     with RequestTimer() as timer:
         security_notes = []
@@ -242,6 +255,19 @@ async def chat(
                 detail="The grounded answer service is temporarily unavailable.",
             )
         if response_text.strip() == SCOPE_REFUSAL:
+            return _scope_refusal(body.thread_id, security_notes, metrics)
+        try:
+            claims = [MaterialClaim.model_validate(claim) for claim in result["claims"]]
+        except (KeyError, TypeError, ValueError):
+            return _scope_refusal(body.thread_id, security_notes, metrics)
+        if not claim_links_are_valid(claims, selected_evidence):
+            return _scope_refusal(body.thread_id, security_notes, metrics)
+        verification = await run_in_threadpool(
+            evidence_verifier.verify, response_text, claims, selected_evidence
+        )
+        if not isinstance(verification, VerificationResult) or not verification.accepts(
+            claims
+        ):
             return _scope_refusal(body.thread_id, security_notes, metrics)
 
         # ---- Step 4: Output Validation ----

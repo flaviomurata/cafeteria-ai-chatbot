@@ -33,6 +33,7 @@ from src.main import (  # noqa: E402
     app,
     get_agent,
     get_cache,
+    get_evidence_verifier,
     get_metrics,
     get_partner_knowledge_retriever,
     get_security,
@@ -40,11 +41,22 @@ from src.main import (  # noqa: E402
 )
 from src.monitoring import MetricsCollector  # noqa: E402
 from src.partner_knowledge.retrieval import RetrievedEvidence  # noqa: E402
+from src.partner_knowledge.verification import (  # noqa: E402
+    MaterialClaim,
+    VerificationResult,
+)
 from src.security import SecurityPipeline  # noqa: E402
 
 DEFAULT_AGENT_RESPONSE = "Today's special is grilled salmon with roasted vegetables."
 
-STATE_ATTRS = ("agent", "security", "cache", "metrics", "partner_knowledge_retriever")
+STATE_ATTRS = (
+    "agent",
+    "security",
+    "cache",
+    "metrics",
+    "partner_knowledge_retriever",
+    "evidence_verifier",
+)
 
 
 class FakeAgent:
@@ -66,6 +78,7 @@ class FakeAgent:
         self.raises = raises
         self.calls: list[str] = []
         self.evidence_calls: list[list[RetrievedEvidence]] = []
+        self.claims: list[dict] | None = None
 
     def invoke(
         self, message: str, evidence: list[RetrievedEvidence] | None = None
@@ -77,9 +90,34 @@ class FakeAgent:
             raise self.raises
         return {
             "response": self.response,
+            "claims": self.claims
+            if self.claims is not None
+            else [{"text": self.response, "evidence_ids": ["evidence-1"]}],
             "model_used": self.model_used,
             "error": None,
         }
+
+
+class FakeEvidenceVerifier:
+    """Deterministic independent verifier for API-seam tests."""
+
+    def __init__(self):
+        self.calls = 0
+        self.answer_seen = ""
+        self.claims_seen: list[dict] = []
+
+    def verify(
+        self,
+        answer: str,
+        claims: list[MaterialClaim],
+        evidence: list[RetrievedEvidence],
+    ) -> VerificationResult:
+        self.calls += 1
+        self.answer_seen = answer
+        self.claims_seen = [claim.model_dump() for claim in claims]
+        return VerificationResult(
+            verdict="verified", verified_claim_indexes=list(range(len(claims)))
+        )
 
 
 class FakePartnerKnowledgeRetriever:
@@ -113,6 +151,9 @@ class Components:
     metrics: MetricsCollector = field(default_factory=MetricsCollector)
     partner_knowledge_retriever: FakePartnerKnowledgeRetriever = field(
         default_factory=FakePartnerKnowledgeRetriever
+    )
+    evidence_verifier: FakeEvidenceVerifier = field(
+        default_factory=FakeEvidenceVerifier
     )
 
 
@@ -151,6 +192,11 @@ def partner_knowledge_retriever(
 
 
 @pytest.fixture
+def evidence_verifier(components: Components) -> FakeEvidenceVerifier:
+    return components.evidence_verifier
+
+
+@pytest.fixture
 async def client(components: Components):
     app.dependency_overrides[get_agent] = lambda: components.agent
     app.dependency_overrides[get_security] = lambda: components.security
@@ -158,6 +204,9 @@ async def client(components: Components):
     app.dependency_overrides[get_metrics] = lambda: components.metrics
     app.dependency_overrides[get_partner_knowledge_retriever] = lambda: (
         components.partner_knowledge_retriever
+    )
+    app.dependency_overrides[get_evidence_verifier] = lambda: (
+        components.evidence_verifier
     )
 
     # `/health` reads `app.state` directly instead of going through DI, and

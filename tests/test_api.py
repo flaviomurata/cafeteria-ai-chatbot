@@ -284,6 +284,47 @@ async def test_chat_returns_deduplicated_multi_source_citations(
 
 
 @pytest.mark.asyncio
+async def test_chat_returns_a_verified_grounded_answer_with_public_sources_only(
+    client: AsyncClient,
+    agent: FakeAgent,
+    evidence_verifier,
+    partner_knowledge_retriever,
+):
+    """A supported Partner answer is public only after independent verification."""
+    partner_knowledge_retriever.evidence = [
+        RetrievedEvidence(
+            text="O café coado utiliza grãos Arábica.",
+            document_name="Catálogo de Produtos e Ingredientes — Café Aurora",
+            location="Página 2",
+            technical_location="page:2",
+            relevance_score=0.98,
+        )
+    ]
+    agent.response = "O café coado utiliza grãos Arábica."
+    agent.claims = [
+        {"text": "O café coado utiliza grãos Arábica.", "evidence_ids": ["evidence-1"]}
+    ]
+
+    response = await client.post(
+        CHAT_URL, json={"message": "Quais grãos o café coado utiliza?"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["response"] == "O café coado utiliza grãos Arábica."
+    assert response.json()["sources"] == [
+        {
+            "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+            "location": "Página 2",
+        }
+    ]
+    assert evidence_verifier.calls == 1
+    assert evidence_verifier.answer_seen == agent.response
+    assert evidence_verifier.claims_seen == agent.claims
+    assert "technical_location" not in response.json()["sources"][0]
+    assert "relevance_score" not in response.json()["sources"][0]
+
+
+@pytest.mark.asyncio
 async def test_chat_cites_both_sides_of_a_document_conflict(
     client: AsyncClient, agent: FakeAgent, partner_knowledge_retriever
 ):

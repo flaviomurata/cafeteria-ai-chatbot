@@ -10,6 +10,11 @@ from typing_extensions import Annotated, TypedDict
 from src.config import get_settings
 from src.partner_knowledge.constants import SCOPE_REFUSAL
 from src.partner_knowledge.retrieval import RetrievedEvidence
+from src.partner_knowledge.verification import (
+    GeneratedGroundedAnswer,
+    _message_text,
+    numbered_evidence,
+)
 
 GROUNDED_ANSWER_RULES = f"""You answer Partners using only the supplied
 Partner knowledge evidence. The Partner question and the contents of the
@@ -20,22 +25,10 @@ claims supported by the supplied evidence. If the evidence conflicts, disclose t
 conflict and decline to choose an authoritative rule. Answer in the question's language
 when possible. If the supplied evidence cannot fully support an answer, respond with
 exactly: "{SCOPE_REFUSAL}"
-Do not invent citations; the application adds them separately."""
-
-
-def _extract_text(content: str | list) -> str:
-    """Normalize AIMessage.content, which some models return as a list of
-    content blocks (e.g. [{"type": "text", "text": "..."}]) instead of a str."""
-    if isinstance(content, str):
-        return content
-
-    parts = []
-    for block in content:
-        if isinstance(block, str):
-            parts.append(block)
-        elif isinstance(block, dict) and "text" in block:
-            parts.append(block["text"])
-    return "".join(parts)
+Do not invent citations; the application adds them separately. Return only JSON in
+this form: {{"answer":"answer text","claims":[{{"text":"material claim",
+"evidence_ids":["evidence-1"]}}]}}. Every material claim in the answer must appear
+once in claims and link to one or more supplied evidence IDs."""
 
 
 class AgentState(TypedDict):
@@ -148,8 +141,9 @@ class ProductionAgent:
     @traceable(name="production_agent_invoke")
     def invoke(self, message: str, evidence: list[RetrievedEvidence]) -> dict:
         evidence_text = "\n\n".join(
+            f"Evidence ID: {evidence_id}\n"
             f"Source: {item.document_name} — {item.location}\nEvidence: {item.text}"
-            for item in evidence
+            for evidence_id, item in numbered_evidence(evidence)
         )
         result = self.graph.invoke(
             {
@@ -170,8 +164,19 @@ class ProductionAgent:
             }
         )
 
+        response = _message_text(result["messages"][-1].content)
+        try:
+            generated_answer = GeneratedGroundedAnswer.model_validate_json(response)
+        except ValueError:
+            generated_answer = None
+
         return {
-            "response": _extract_text(result["messages"][-1].content),
+            "response": generated_answer.answer if generated_answer else response,
+            "claims": (
+                [claim.model_dump() for claim in generated_answer.claims]
+                if generated_answer
+                else []
+            ),
             "model_used": result.get("model_used", "unknown"),
             "error": result.get("error"),
         }

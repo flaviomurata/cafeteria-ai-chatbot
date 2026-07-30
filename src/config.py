@@ -8,7 +8,6 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     primary_model: str = "gemini-3.6-flash"
     fallback_model: str = "gemini-3.5-flash"
-
     langchain_tracing_v2: bool = True
     langchain_api_key: str = ""
     langchain_project: str = "production-api"
