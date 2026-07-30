@@ -220,5 +220,10 @@ __marimo__/
 # Generated Partner knowledge index
 data/partner-knowledge-index/
 
+# Agent scaffolding - local only
 AGENTS.md
 CLAUDE.md
+docs/agents/
+.scratch/
+
+.DS_Store
