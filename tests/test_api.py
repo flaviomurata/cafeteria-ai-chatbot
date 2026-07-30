@@ -248,6 +248,47 @@ async def test_chat_preserves_sources_when_served_from_cache(
 
 
 @pytest.mark.asyncio
+async def test_chat_serves_a_verified_answer_and_its_sources_without_reverification(
+    client: AsyncClient,
+    agent: FakeAgent,
+    evidence_verifier,
+    partner_knowledge_retriever,
+):
+    """Only an accepted answer can create a repeat-response cache entry."""
+    partner_knowledge_retriever.evidence = [
+        RetrievedEvidence(
+            text="O café coado utiliza grãos Arábica.",
+            document_name="Catálogo de Produtos e Ingredientes — Café Aurora",
+            location="Página 2",
+            technical_location="page:2",
+            relevance_score=0.98,
+        )
+    ]
+    agent.response = "O café coado utiliza grãos Arábica."
+
+    first = await client.post(
+        CHAT_URL, json={"message": "Quais grãos o café coado utiliza?"}
+    )
+    second = await client.post(
+        CHAT_URL, json={"message": "Quais grãos o café coado utiliza?"}
+    )
+
+    assert first.status_code == 200
+    assert first.json()["cached"] is False
+    assert first.json()["sources"] == [
+        {
+            "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+            "location": "Página 2",
+        }
+    ]
+    assert second.json()["cached"] is True
+    assert second.json()["response"] == first.json()["response"]
+    assert second.json()["sources"] == first.json()["sources"]
+    assert evidence_verifier.calls == 1
+    assert len(agent.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_chat_returns_deduplicated_multi_source_citations(
     client: AsyncClient, agent: FakeAgent, partner_knowledge_retriever
 ):
@@ -331,6 +372,7 @@ async def test_chat_returns_a_verified_grounded_answer_with_public_sources_only(
 async def test_chat_discloses_only_verifier_identified_conflicting_sources(
     client: AsyncClient,
     agent: FakeAgent,
+    cache: ResponseCache,
     evidence_verifier,
     partner_knowledge_retriever,
 ):
@@ -379,6 +421,26 @@ async def test_chat_discloses_only_verifier_identified_conflicting_sources(
             "location": "Página 5",
         },
     ]
+    assert cache.get("Qual é o limite de aprovação de despesas?") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model_used", ["primary", "fallback"])
+async def test_chat_uses_the_same_retrieved_evidence_for_each_generation_path(
+    client: AsyncClient,
+    agent: FakeAgent,
+    evidence_verifier,
+    partner_knowledge_retriever,
+    model_used: str,
+):
+    agent.model_used = model_used
+
+    response = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
+
+    assert response.status_code == 200
+    assert response.json()["model_used"] == model_used
+    assert agent.evidence_calls == [partner_knowledge_retriever.evidence]
+    assert evidence_verifier.evidence_seen == [partner_knowledge_retriever.evidence]
 
 
 @pytest.mark.asyncio

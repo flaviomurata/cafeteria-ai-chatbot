@@ -108,6 +108,7 @@ class FakeEvidenceVerifier:
         self.calls = 0
         self.answer_seen = ""
         self.claims_seen: list[dict] = []
+        self.evidence_seen: list[list[RetrievedEvidence]] = []
         self.result: VerificationResult | object | None = None
         self.raises: Exception | None = None
 
@@ -120,6 +121,7 @@ class FakeEvidenceVerifier:
         self.calls += 1
         self.answer_seen = answer
         self.claims_seen = [claim.model_dump() for claim in claims]
+        self.evidence_seen.append(evidence)
         if self.raises is not None:
             raise self.raises
         if self.result is not None:
