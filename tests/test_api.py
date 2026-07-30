@@ -15,7 +15,9 @@ from src.cache import CachedChatResponse, ResponseCache
 from src.main import app, get_partner_knowledge_retriever
 from src.monitoring import MetricsCollector
 from src.partner_knowledge.constants import SCOPE_REFUSAL
+from src.partner_knowledge.grounding import DOCUMENT_CONFLICT_RESPONSE
 from src.partner_knowledge.retrieval import PersistentChromaRetriever, RetrievedEvidence
+from src.partner_knowledge.verification import VerificationResult
 from tests.conftest import DEFAULT_AGENT_RESPONSE, RATE_LIMIT_PER_MINUTE, FakeAgent
 
 CHAT_URL = "/chat"
@@ -265,6 +267,7 @@ async def test_chat_returns_deduplicated_multi_source_citations(
             relevance_score=0.97,
         ),
     ]
+
     agent.response = "A CA-01 abre às 7h e o atendimento começa com saudação cordial."
 
     response = await client.post(
@@ -325,8 +328,11 @@ async def test_chat_returns_a_verified_grounded_answer_with_public_sources_only(
 
 
 @pytest.mark.asyncio
-async def test_chat_cites_both_sides_of_a_document_conflict(
-    client: AsyncClient, agent: FakeAgent, partner_knowledge_retriever
+async def test_chat_discloses_only_verifier_identified_conflicting_sources(
+    client: AsyncClient,
+    agent: FakeAgent,
+    evidence_verifier,
+    partner_knowledge_retriever,
 ):
     partner_knowledge_retriever.evidence = [
         RetrievedEvidence(
@@ -343,9 +349,17 @@ async def test_chat_cites_both_sides_of_a_document_conflict(
             technical_location="page:5",
             relevance_score=0.97,
         ),
+        RetrievedEvidence(
+            text="Reembolsos exigem comprovante.",
+            document_name="Política de Despesas e Reembolsos",
+            location="Seção: Reembolsos",
+            technical_location="section:3",
+            relevance_score=0.96,
+        ),
     ]
-    agent.response = (
-        "Os documentos divergem entre R$ 100 e R$ 150; não posso selecionar uma regra."
+    agent.response = "A aprovação é necessária acima de R$ 100."
+    evidence_verifier.result = VerificationResult.model_construct(
+        verdict="conflict", conflicting_evidence_ids=["evidence-1", "evidence-2"]
     )
 
     response = await client.post(
@@ -353,9 +367,153 @@ async def test_chat_cites_both_sides_of_a_document_conflict(
     )
 
     body = response.json()
-    assert "divergem" in body["response"]
-    assert "não posso selecionar" in body["response"]
-    assert len(body["sources"]) == 2
+    assert body["response"] == DOCUMENT_CONFLICT_RESPONSE
+    assert body["response"] != agent.response
+    assert body["sources"] == [
+        {
+            "document_name": "Política de Despesas e Reembolsos",
+            "location": "Seção: Aprovações",
+        },
+        {
+            "document_name": "Manual de Operações das Unidades — Café Aurora",
+            "location": "Página 5",
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chat_refuses_an_unsupported_model_claim(
+    client: AsyncClient,
+    agent: FakeAgent,
+    evidence_verifier,
+    partner_knowledge_retriever,
+):
+    """Retrieved evidence must not make an unrelated model claim grounded."""
+    partner_knowledge_retriever.evidence = [
+        RetrievedEvidence(
+            text="Aprovação é necessária para despesas acima de R$ 150.",
+            document_name="Política de Despesas e Reembolsos",
+            location="Seção: Aprovações",
+            technical_location="section:2",
+            relevance_score=0.98,
+        )
+    ]
+    agent.response = "Despesas nunca exigem aprovação."
+    evidence_verifier.result = VerificationResult(verdict="rejected")
+
+    response = await client.post(
+        CHAT_URL, json={"message": "Quando despesas exigem aprovação?"}
+    )
+
+    body = response.json()
+    assert body["response"] == SCOPE_REFUSAL
+    assert body["sources"] == []
+
+
+@pytest.mark.asyncio
+async def test_chat_does_not_allow_the_model_to_select_a_conflicting_rule(
+    client: AsyncClient, agent: FakeAgent, partner_knowledge_retriever
+):
+    """Conflicting sources require disclosure, not an authoritative answer."""
+    partner_knowledge_retriever.evidence = [
+        RetrievedEvidence(
+            text="Aprovação é necessária para despesas acima de R$ 150.",
+            document_name="Política de Despesas e Reembolsos",
+            location="Seção: Aprovações",
+            technical_location="section:2",
+            relevance_score=0.98,
+        ),
+        RetrievedEvidence(
+            text="Aprovação é necessária para despesas acima de R$ 100.",
+            document_name="Manual de Operações das Unidades — Café Aurora",
+            location="Página 5",
+            technical_location="page:5",
+            relevance_score=0.97,
+        ),
+    ]
+    agent.response = "A aprovação é necessária acima de R$ 100."
+
+    response = await client.post(
+        CHAT_URL, json={"message": "Qual é o limite de aprovação de despesas?"}
+    )
+
+    assert response.json()["response"] == agent.response
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("claims", "verifier_result", "verifier_error"),
+    [
+        (
+            [{"text": "Regra", "evidence_ids": ["evidence-99"]}],
+            None,
+            None,
+        ),
+        ([], None, None),
+        ("malformed claims", None, None),
+        (None, VerificationResult(verdict="rejected"), None),
+        (None, None, TimeoutError("verification timed out")),
+        (None, None, RuntimeError("verifier unavailable")),
+    ],
+    ids=[
+        "unknown-evidence-link",
+        "omitted-material-claim",
+        "malformed-generation-output",
+        "ambiguous-verdict",
+        "verification-timeout",
+        "verifier-failure",
+    ],
+)
+async def test_chat_refuses_every_unverifiable_answer_without_citations(
+    client: AsyncClient,
+    agent: FakeAgent,
+    cache: ResponseCache,
+    evidence_verifier,
+    claims,
+    verifier_result,
+    verifier_error,
+):
+    agent.claims = claims
+    evidence_verifier.result = verifier_result
+    evidence_verifier.raises = verifier_error
+
+    response = await client.post(CHAT_URL, json={"message": "Qual é o prato especial?"})
+
+    assert response.status_code == 200
+    assert response.json()["response"] == SCOPE_REFUSAL
+    assert response.json()["sources"] == []
+    assert cache.get("Qual é o prato especial?") is None
+
+
+@pytest.mark.asyncio
+async def test_chat_refuses_malformed_generation_output_without_citations(
+    client: AsyncClient, agent: FakeAgent, cache: ResponseCache
+):
+    agent.result = {"claims": []}
+
+    response = await client.post(CHAT_URL, json={"message": "Qual é o prato especial?"})
+
+    assert response.status_code == 200
+    assert response.json()["response"] == SCOPE_REFUSAL
+    assert response.json()["sources"] == []
+    assert cache.get("Qual é o prato especial?") is None
+
+
+@pytest.mark.asyncio
+async def test_chat_verifies_a_fallback_answer_against_the_same_retrieved_evidence(
+    client: AsyncClient,
+    agent: FakeAgent,
+    evidence_verifier,
+    partner_knowledge_retriever,
+):
+    agent.model_used = "fallback"
+
+    response = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
+
+    assert response.status_code == 200
+    assert response.json()["model_used"] == "fallback"
+    assert agent.evidence_calls == [partner_knowledge_retriever.evidence]
+    assert evidence_verifier.calls == 1
 
 
 @pytest.mark.asyncio

@@ -23,6 +23,7 @@ from src.models import (
 from src.monitoring import MetricsCollector, RequestTimer, get_logger
 from src.partner_knowledge.config import get_partner_knowledge_settings
 from src.partner_knowledge.constants import SCOPE_REFUSAL
+from src.partner_knowledge.grounding import DOCUMENT_CONFLICT_RESPONSE
 from src.partner_knowledge.retrieval import (
     PartnerKnowledgeRetriever,
     PersistentChromaRetriever,
@@ -34,6 +35,7 @@ from src.partner_knowledge.verification import (
     ProductionEvidenceVerifier,
     VerificationResult,
     claim_links_are_valid,
+    numbered_evidence,
 )
 from src.security import SecurityPipeline
 
@@ -230,13 +232,13 @@ async def chat(
             result = await run_in_threadpool(
                 agent.invoke, cleaned_message, selected_evidence
             )
-        except Exception as e:
+        except (ConnectionError, RuntimeError, TimeoutError) as exc:
             logger.error(
-                f"Agent invocation failed: {e}",
+                "Agent invocation failed",
                 extra={
                     "extra_data": {
                         "thread_id": body.thread_id,
-                        "error": str(e),
+                        "error": str(exc),
                     }
                 },
             )
@@ -246,8 +248,14 @@ async def chat(
                 detail="An error occurred while processing your request.",
             )
 
-        response_text = result["response"]
-        model_used = result["model_used"]
+        try:
+            response_text = result["response"]
+            model_used = result["model_used"]
+            if not isinstance(response_text, str) or not isinstance(model_used, str):
+                raise TypeError("Agent response fields have invalid types")
+            claims = [MaterialClaim.model_validate(claim) for claim in result["claims"]]
+        except (KeyError, TypeError, ValueError):
+            return _scope_refusal(body.thread_id, security_notes, metrics)
         if model_used == "error_handler":
             metrics.record_request(latency_ms=0, error=True)
             raise HTTPException(
@@ -256,15 +264,25 @@ async def chat(
             )
         if response_text.strip() == SCOPE_REFUSAL:
             return _scope_refusal(body.thread_id, security_notes, metrics)
-        try:
-            claims = [MaterialClaim.model_validate(claim) for claim in result["claims"]]
-        except (KeyError, TypeError, ValueError):
-            return _scope_refusal(body.thread_id, security_notes, metrics)
         if not claim_links_are_valid(claims, selected_evidence):
             return _scope_refusal(body.thread_id, security_notes, metrics)
-        verification = await run_in_threadpool(
-            evidence_verifier.verify, response_text, claims, selected_evidence
-        )
+        try:
+            verification = await run_in_threadpool(
+                evidence_verifier.verify, response_text, claims, selected_evidence
+            )
+        except Exception:  # The external verifier is unavailable or malformed.
+            return _scope_refusal(body.thread_id, security_notes, metrics)
+        if isinstance(
+            verification, VerificationResult
+        ) and verification.identifies_conflict(selected_evidence):
+            return _grounded_conflict(
+                body.thread_id,
+                security_notes,
+                metrics,
+                _build_sources_for_evidence_ids(
+                    selected_evidence, verification.conflicting_evidence_ids
+                ),
+            )
         if not isinstance(verification, VerificationResult) or not verification.accepts(
             claims
         ):
@@ -342,6 +360,14 @@ def _build_sources(evidence: list[RetrievedEvidence]) -> list[SourceCitation]:
     return sources
 
 
+def _build_sources_for_evidence_ids(
+    evidence: list[RetrievedEvidence], evidence_ids: list[str]
+) -> list[SourceCitation]:
+    """Expose only the sources the verifier named as conflicting."""
+    evidence_by_id = dict(numbered_evidence(evidence))
+    return _build_sources([evidence_by_id[evidence_id] for evidence_id in evidence_ids])
+
+
 def _scope_refusal(
     thread_id: str, security_notes: list[str], metrics: MetricsCollector
 ) -> dict:
@@ -353,6 +379,24 @@ def _scope_refusal(
         "cached": False,
         "processing_time_ms": 0,
         "sources": [],
+        "security_notes": security_notes,
+    }
+
+
+def _grounded_conflict(
+    thread_id: str,
+    security_notes: list[str],
+    metrics: MetricsCollector,
+    sources: list[SourceCitation],
+) -> dict:
+    metrics.record_request(latency_ms=0, error=False)
+    return {
+        "response": DOCUMENT_CONFLICT_RESPONSE,
+        "thread_id": thread_id,
+        "model_used": "grounding_conflict",
+        "cached": False,
+        "processing_time_ms": 0,
+        "sources": sources,
         "security_notes": security_notes,
     }
 

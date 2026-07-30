@@ -26,14 +26,24 @@ class GeneratedGroundedAnswer(BaseModel):
 
 
 class VerificationResult(BaseModel):
-    """The verifier's approval for the generated material claims."""
+    """The verifier's verdict for a generated grounded answer."""
 
-    verdict: Literal["verified", "rejected"]
+    verdict: Literal["verified", "rejected", "conflict"]
     verified_claim_indexes: list[int] = Field(default_factory=list)
+    conflicting_evidence_ids: list[str] = Field(default_factory=list)
 
     def accepts(self, claims: list[MaterialClaim]) -> bool:
         return self.verdict == "verified" and set(self.verified_claim_indexes) == set(
             range(len(claims))
+        )
+
+    def identifies_conflict(self, evidence: list[RetrievedEvidence]) -> bool:
+        """Accept only a conflict tied to at least two selected evidence items."""
+        valid_ids = {evidence_id for evidence_id, _ in numbered_evidence(evidence)}
+        return (
+            self.verdict == "conflict"
+            and len(set(self.conflicting_evidence_ids)) >= 2
+            and set(self.conflicting_evidence_ids).issubset(valid_ids)
         )
 
 
@@ -88,10 +98,13 @@ class ProductionEvidenceVerifier:
                         "directly supports it, and reject the answer if its claims "
                         "omit any material fact stated in the answer. "
                         "Return JSON exactly matching this schema: "
-                        '{"verdict":"verified"|"rejected",'
-                        '"verified_claim_indexes":[integer]}. '
+                        '{"verdict":"verified"|"rejected"|"conflict",'
+                        '"verified_claim_indexes":[integer],'
+                        '"conflicting_evidence_ids":["evidence-1"]}. '
                         "A verified verdict requires "
-                        "every supplied claim to be approved."
+                        "every supplied claim to be approved. Return conflict only "
+                        "when two or more supplied evidence items give incompatible "
+                        "guidance for a claim; list only those evidence IDs."
                     )
                 ),
                 HumanMessage(

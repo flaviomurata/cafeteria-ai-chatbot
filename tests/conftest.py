@@ -79,6 +79,7 @@ class FakeAgent:
         self.calls: list[str] = []
         self.evidence_calls: list[list[RetrievedEvidence]] = []
         self.claims: list[dict] | None = None
+        self.result: dict | None = None
 
     def invoke(
         self, message: str, evidence: list[RetrievedEvidence] | None = None
@@ -88,6 +89,8 @@ class FakeAgent:
             self.evidence_calls.append(evidence)
         if self.raises is not None:
             raise self.raises
+        if self.result is not None:
+            return self.result
         return {
             "response": self.response,
             "claims": self.claims
@@ -105,6 +108,8 @@ class FakeEvidenceVerifier:
         self.calls = 0
         self.answer_seen = ""
         self.claims_seen: list[dict] = []
+        self.result: VerificationResult | object | None = None
+        self.raises: Exception | None = None
 
     def verify(
         self,
@@ -115,6 +120,10 @@ class FakeEvidenceVerifier:
         self.calls += 1
         self.answer_seen = answer
         self.claims_seen = [claim.model_dump() for claim in claims]
+        if self.raises is not None:
+            raise self.raises
+        if self.result is not None:
+            return self.result
         return VerificationResult(
             verdict="verified", verified_claim_indexes=list(range(len(claims)))
         )
