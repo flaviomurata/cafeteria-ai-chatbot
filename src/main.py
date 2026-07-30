@@ -22,6 +22,7 @@ from src.models import (
 )
 from src.monitoring import MetricsCollector, RequestTimer, get_logger
 from src.partner_knowledge.config import get_partner_knowledge_settings
+from src.partner_knowledge.constants import SCOPE_REFUSAL
 from src.partner_knowledge.retrieval import (
     PartnerKnowledgeRetriever,
     PersistentChromaRetriever,
@@ -240,6 +241,8 @@ async def chat(
                 status_code=503,
                 detail="The grounded answer service is temporarily unavailable.",
             )
+        if response_text.strip() == SCOPE_REFUSAL:
+            return _scope_refusal(body.thread_id, security_notes, metrics)
 
         # ---- Step 4: Output Validation ----
         validated_response, output_warnings = security.check_output(response_text)
@@ -318,9 +321,7 @@ def _scope_refusal(
 ) -> dict:
     metrics.record_request(latency_ms=0, error=False)
     return {
-        "response": (
-            "I can only answer questions supported by Café Aurora Partner knowledge."
-        ),
+        "response": SCOPE_REFUSAL,
         "thread_id": thread_id,
         "model_used": "grounding_refusal",
         "cached": False,

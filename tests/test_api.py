@@ -11,6 +11,7 @@ from httpx import AsyncClient
 
 from src.cache import CachedChatResponse, ResponseCache
 from src.monitoring import MetricsCollector
+from src.partner_knowledge.constants import SCOPE_REFUSAL
 from src.partner_knowledge.retrieval import RetrievedEvidence
 from tests.conftest import DEFAULT_AGENT_RESPONSE, RATE_LIMIT_PER_MINUTE, FakeAgent
 
@@ -313,6 +314,24 @@ async def test_chat_refuses_a_question_without_supported_evidence(
     assert response.json()["model_used"] == "grounding_refusal"
     assert response.json()["sources"] == []
     assert agent.calls == []
+
+
+@pytest.mark.asyncio
+async def test_chat_refuses_partial_evidence_without_citations_or_caching(
+    client: AsyncClient, agent: FakeAgent, cache: ResponseCache
+):
+    agent.response = SCOPE_REFUSAL
+
+    response = await client.post(
+        CHAT_URL, json={"message": "Qual é a política para um caso não documentado?"}
+    )
+
+    body = response.json()
+    assert body["response"] == SCOPE_REFUSAL
+    assert body["model_used"] == "grounding_refusal"
+    assert body["sources"] == []
+    assert body["cached"] is False
+    assert cache.get("Qual é a política para um caso não documentado?") is None
 
 
 # --------------------------------------------------------------------------- #
