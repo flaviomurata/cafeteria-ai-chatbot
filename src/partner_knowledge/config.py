@@ -8,7 +8,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class PartnerKnowledgeSettings(BaseSettings):
     """Configuration for the persistent Partner knowledge index."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="PARTNER_KNOWLEDGE_",
+        env_file=".env",
+        extra="ignore",
+    )
 
     partner_document_source: Path = Path("media/cafeteria-documents")
     partner_index_path: Path = Path("data/partner-knowledge-index")

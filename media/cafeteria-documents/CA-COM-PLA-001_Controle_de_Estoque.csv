@@ -1,0 +1,101 @@
+﻿Código da unidade,Unidade,Código do item,Descrição,Categoria,Unidade de medida,Quantidade atual,Estoque mínimo,Fornecedor,Custo unitário (R$),Data da última entrada,Data de validade,Lote,Local de armazenamento,Status de estoque,Ação recomendada
+CA-CPS-01,Centro,ING-001,Café em grãos Aurora Clássico,Grãos e pós,kg,16.0,8,Serra Alta Cafés,18.5,2026-07-26,2026-11-23,L260726-101,Estoque seco A,NORMAL,Sem ação
+CA-CPS-01,Centro,ING-003,Leite integral,Laticínios,L,20.4,24,Laticínios Boa Serra,4.9,2026-07-25,2026-08-04,L260725-102,Refrigerador 1,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-01,Centro,ING-004,Leite sem lactose,Laticínios,L,8.4,8,Laticínios Boa Serra,6.2,2026-07-24,2026-08-05,L260724-103,Refrigerador 1,NORMAL,Sem ação
+CA-CPS-01,Centro,ING-005,Bebida vegetal de aveia,Bebidas vegetais,L,11.4,6,Verde Campo Alimentos,9.8,2026-07-23,2026-09-06,L260723-104,Refrigerador 2,NORMAL,Sem ação
+CA-CPS-01,Centro,ING-007,Bebida vegetal de soja,Bebidas vegetais,L,2.25,5,Verde Campo Alimentos,8.9,2026-07-22,2026-09-05,L260722-105,Refrigerador 2,CRÍTICO,Solicitar reposição imediata
+CA-CPS-01,Centro,ING-008,Calda de chocolate,Grãos e pós,frasco,3.4,4,Doce Ponto,16.0,2026-07-21,2027-01-17,L260721-106,Estoque seco A,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-01,Centro,ING-009,Calda de caramelo,Grãos e pós,frasco,5.4,3,Doce Ponto,17.5,2026-07-20,2027-01-16,L260720-107,Estoque seco A,NORMAL,Sem ação
+CA-CPS-01,Centro,ING-010,Chocolate em pó,Grãos e pós,kg,6.0,3,Doce Ponto,22.0,2026-07-19,2027-03-16,L260719-108,Estoque seco A,NORMAL,Sem ação
+CA-CPS-01,Centro,ING-014,Canela em pó,Grãos e pós,kg,0.85,1,Temperos Horizonte,28.0,2026-07-18,2027-07-18,L260718-109,Estoque seco A,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-01,Centro,ING-016,Queijo muçarela,Laticínios,kg,5.25,5,Laticínios Boa Serra,34.0,2026-07-17,2026-07-29,L260717-110,Refrigerador 1,NORMAL,Sem ação
+CA-CPS-01,Centro,ING-017,Peito de peru,Alimentos refrigerados,kg,5.7,3,Sabor & Corte,38.0,2026-07-16,2026-07-28,L260716-111,Refrigerador 3,NORMAL,Sem ação
+CA-CPS-01,Centro,ING-018,Frango desfiado,Alimentos refrigerados,kg,1.8,4,Cozinha Central Aurora,29.0,2026-07-15,2026-07-23,L260715-112,Refrigerador 3,CRÍTICO,Solicitar reposição imediata
+CA-CPS-01,Centro,EMB-001,Copo quente 180 ml,Embalagens,un,255.0,300,PackBem Embalagens,0.22,2026-07-14,2028-07-13,L260714-113,Estoque seco B,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-01,Centro,EMB-002,Copo quente 300 ml,Embalagens,un,450.0,250,PackBem Embalagens,0.28,2026-07-13,2028-07-12,L260713-114,Estoque seco B,NORMAL,Sem ação
+CA-CPS-01,Centro,EMB-003,Copo frio 400 ml,Embalagens,un,500.0,250,PackBem Embalagens,0.32,2026-07-12,2028-07-11,L260712-115,Estoque seco B,NORMAL,Sem ação
+CA-CPS-01,Centro,EMB-007,Tampa para bebida gelada,Embalagens,un,255.0,300,PackBem Embalagens,0.16,2026-07-11,2028-07-10,L260711-116,Estoque seco B,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-01,Centro,EMB-010,Sacola pequena,Embalagens,un,157.5,150,PackBem Embalagens,0.18,2026-07-10,2028-07-09,L260710-117,Estoque seco B,NORMAL,Sem ação
+CA-CPS-01,Centro,EMB-012,Guardanapo,Embalagens,un,1900.0,1000,PackBem Embalagens,0.03,2026-07-09,2028-07-08,L260709-118,Estoque seco B,NORMAL,Sem ação
+CA-CPS-01,Centro,LIM-001,Detergente neutro,Produtos de limpeza,L,2.25,5,Higiene Ideal,7.5,2026-07-08,2027-07-08,L260708-119,Armário de limpeza,CRÍTICO,Solicitar reposição imediata
+CA-CPS-01,Centro,LIM-002,Desinfetante de uso geral,Produtos de limpeza,L,4.25,5,Higiene Ideal,9.2,2026-07-07,2027-07-07,L260707-120,Armário de limpeza,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-02,Cambuí,ING-001,Café em grãos Aurora Clássico,Grãos e pós,kg,6.8,8,Serra Alta Cafés,18.5,2026-07-23,2026-11-20,L260723-201,Estoque seco A,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-02,Cambuí,ING-003,Leite integral,Laticínios,L,45.6,24,Laticínios Boa Serra,4.9,2026-07-22,2026-08-01,L260722-202,Refrigerador 1,NORMAL,Sem ação
+CA-CPS-02,Cambuí,ING-004,Leite sem lactose,Laticínios,L,6.8,8,Laticínios Boa Serra,6.2,2026-07-21,2026-08-02,L260721-203,Refrigerador 1,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-02,Cambuí,ING-005,Bebida vegetal de aveia,Bebidas vegetais,L,10.8,6,Verde Campo Alimentos,9.8,2026-07-20,2026-09-03,L260720-204,Refrigerador 2,NORMAL,Sem ação
+CA-CPS-02,Cambuí,ING-007,Bebida vegetal de soja,Bebidas vegetais,L,2.25,5,Verde Campo Alimentos,8.9,2026-07-19,2026-09-02,L260719-205,Refrigerador 2,CRÍTICO,Solicitar reposição imediata
+CA-CPS-02,Cambuí,ING-008,Calda de chocolate,Grãos e pós,frasco,4.2,4,Doce Ponto,16.0,2026-07-18,2027-01-14,L260718-206,Estoque seco A,NORMAL,Sem ação
+CA-CPS-02,Cambuí,ING-009,Calda de caramelo,Grãos e pós,frasco,6.0,3,Doce Ponto,17.5,2026-07-17,2027-01-13,L260717-207,Estoque seco A,NORMAL,Sem ação
+CA-CPS-02,Cambuí,ING-010,Chocolate em pó,Grãos e pós,kg,2.55,3,Doce Ponto,22.0,2026-07-16,2027-03-13,L260716-208,Estoque seco A,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-02,Cambuí,ING-014,Canela em pó,Grãos e pós,kg,1.9,1,Temperos Horizonte,28.0,2026-07-15,2027-07-15,L260715-209,Estoque seco A,NORMAL,Sem ação
+CA-CPS-02,Cambuí,ING-016,Queijo muçarela,Laticínios,kg,4.25,5,Laticínios Boa Serra,34.0,2026-07-14,2026-07-26,L260714-210,Refrigerador 1,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-02,Cambuí,ING-017,Peito de peru,Alimentos refrigerados,kg,5.4,3,Sabor & Corte,38.0,2026-07-13,2026-07-25,L260713-211,Refrigerador 3,NORMAL,Sem ação
+CA-CPS-02,Cambuí,ING-018,Frango desfiado,Alimentos refrigerados,kg,1.8,4,Cozinha Central Aurora,29.0,2026-07-12,2026-07-20,L260712-212,Refrigerador 3,CRÍTICO,Solicitar reposição imediata
+CA-CPS-02,Cambuí,EMB-001,Copo quente 180 ml,Embalagens,un,315.0,300,PackBem Embalagens,0.22,2026-07-11,2028-07-10,L260711-213,Estoque seco B,NORMAL,Sem ação
+CA-CPS-02,Cambuí,EMB-002,Copo quente 300 ml,Embalagens,un,500.0,250,PackBem Embalagens,0.28,2026-07-10,2028-07-09,L260710-214,Estoque seco B,NORMAL,Sem ação
+CA-CPS-02,Cambuí,EMB-003,Copo frio 400 ml,Embalagens,un,212.5,250,PackBem Embalagens,0.32,2026-07-09,2028-07-08,L260709-215,Estoque seco B,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-02,Cambuí,EMB-007,Tampa para bebida gelada,Embalagens,un,570.0,300,PackBem Embalagens,0.16,2026-07-08,2028-07-07,L260708-216,Estoque seco B,NORMAL,Sem ação
+CA-CPS-02,Cambuí,EMB-010,Sacola pequena,Embalagens,un,127.5,150,PackBem Embalagens,0.18,2026-07-07,2028-07-06,L260707-217,Estoque seco B,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-02,Cambuí,EMB-012,Guardanapo,Embalagens,un,1800.0,1000,PackBem Embalagens,0.03,2026-07-26,2028-07-25,L260726-218,Estoque seco B,NORMAL,Sem ação
+CA-CPS-02,Cambuí,LIM-001,Detergente neutro,Produtos de limpeza,L,2.25,5,Higiene Ideal,7.5,2026-07-25,2027-07-25,L260725-219,Armário de limpeza,CRÍTICO,Solicitar reposição imediata
+CA-CPS-02,Cambuí,LIM-002,Desinfetante de uso geral,Produtos de limpeza,L,5.25,5,Higiene Ideal,9.2,2026-07-24,2027-07-24,L260724-220,Armário de limpeza,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,ING-001,Café em grãos Aurora Clássico,Grãos e pós,kg,15.2,8,Serra Alta Cafés,18.5,2026-07-20,2026-11-17,L260720-301,Estoque seco A,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,ING-003,Leite integral,Laticínios,L,20.4,24,Laticínios Boa Serra,4.9,2026-07-19,2026-07-29,L260719-302,Refrigerador 1,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-03,Barão Geraldo,ING-004,Leite sem lactose,Laticínios,L,16.0,8,Laticínios Boa Serra,6.2,2026-07-18,2026-07-30,L260718-303,Refrigerador 1,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,ING-005,Bebida vegetal de aveia,Bebidas vegetais,L,6.3,6,Verde Campo Alimentos,9.8,2026-07-17,2026-08-31,L260717-304,Refrigerador 2,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,ING-007,Bebida vegetal de soja,Bebidas vegetais,L,2.25,5,Verde Campo Alimentos,8.9,2026-07-16,2026-08-30,L260716-305,Refrigerador 2,CRÍTICO,Solicitar reposição imediata
+CA-CPS-03,Barão Geraldo,ING-008,Calda de chocolate,Grãos e pós,frasco,7.2,4,Doce Ponto,16.0,2026-07-15,2027-01-11,L260715-306,Estoque seco A,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,ING-009,Calda de caramelo,Grãos e pós,frasco,2.55,3,Doce Ponto,17.5,2026-07-14,2027-01-10,L260714-307,Estoque seco A,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-03,Barão Geraldo,ING-010,Chocolate em pó,Grãos e pós,kg,5.7,3,Doce Ponto,22.0,2026-07-13,2027-03-10,L260713-308,Estoque seco A,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,ING-014,Canela em pó,Grãos e pós,kg,0.85,1,Temperos Horizonte,28.0,2026-07-12,2027-07-12,L260712-309,Estoque seco A,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-03,Barão Geraldo,ING-016,Queijo muçarela,Laticínios,kg,10.0,5,Laticínios Boa Serra,34.0,2026-07-11,2026-07-23,L260711-310,Refrigerador 1,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,ING-017,Peito de peru,Alimentos refrigerados,kg,3.15,3,Sabor & Corte,38.0,2026-07-10,2026-07-22,L260710-311,Refrigerador 3,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,ING-018,Frango desfiado,Alimentos refrigerados,kg,1.8,4,Cozinha Central Aurora,29.0,2026-07-09,2026-07-17,L260709-312,Refrigerador 3,CRÍTICO,Solicitar reposição imediata
+CA-CPS-03,Barão Geraldo,EMB-001,Copo quente 180 ml,Embalagens,un,540.0,300,PackBem Embalagens,0.22,2026-07-08,2028-07-07,L260708-313,Estoque seco B,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,EMB-002,Copo quente 300 ml,Embalagens,un,212.5,250,PackBem Embalagens,0.28,2026-07-07,2028-07-06,L260707-314,Estoque seco B,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-03,Barão Geraldo,EMB-003,Copo frio 400 ml,Embalagens,un,475.0,250,PackBem Embalagens,0.32,2026-07-26,2028-07-25,L260726-315,Estoque seco B,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,EMB-007,Tampa para bebida gelada,Embalagens,un,255.0,300,PackBem Embalagens,0.16,2026-07-25,2028-07-24,L260725-316,Estoque seco B,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-03,Barão Geraldo,EMB-010,Sacola pequena,Embalagens,un,300.0,150,PackBem Embalagens,0.18,2026-07-24,2028-07-23,L260724-317,Estoque seco B,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,EMB-012,Guardanapo,Embalagens,un,1050.0,1000,PackBem Embalagens,0.03,2026-07-23,2028-07-22,L260723-318,Estoque seco B,NORMAL,Sem ação
+CA-CPS-03,Barão Geraldo,LIM-001,Detergente neutro,Produtos de limpeza,L,2.25,5,Higiene Ideal,7.5,2026-07-22,2027-07-22,L260722-319,Armário de limpeza,CRÍTICO,Solicitar reposição imediata
+CA-CPS-03,Barão Geraldo,LIM-002,Desinfetante de uso geral,Produtos de limpeza,L,9.0,5,Higiene Ideal,9.2,2026-07-21,2027-07-21,L260721-320,Armário de limpeza,NORMAL,Sem ação
+CA-VLH-01,Valinhos,ING-001,Café em grãos Aurora Clássico,Grãos e pós,kg,6.8,8,Serra Alta Cafés,18.5,2026-07-17,2026-11-14,L260717-401,Estoque seco A,ATENÇÃO,Incluir no próximo pedido
+CA-VLH-01,Valinhos,ING-003,Leite integral,Laticínios,L,48.0,24,Laticínios Boa Serra,4.9,2026-07-16,2026-07-26,L260716-402,Refrigerador 1,NORMAL,Sem ação
+CA-VLH-01,Valinhos,ING-004,Leite sem lactose,Laticínios,L,14.4,8,Laticínios Boa Serra,6.2,2026-07-15,2026-07-27,L260715-403,Refrigerador 1,NORMAL,Sem ação
+CA-VLH-01,Valinhos,ING-005,Bebida vegetal de aveia,Bebidas vegetais,L,5.1,6,Verde Campo Alimentos,9.8,2026-07-14,2026-08-28,L260714-404,Refrigerador 2,ATENÇÃO,Incluir no próximo pedido
+CA-VLH-01,Valinhos,ING-007,Bebida vegetal de soja,Bebidas vegetais,L,2.25,5,Verde Campo Alimentos,8.9,2026-07-13,2026-08-27,L260713-405,Refrigerador 2,CRÍTICO,Solicitar reposição imediata
+CA-VLH-01,Valinhos,ING-008,Calda de chocolate,Grãos e pós,frasco,7.6,4,Doce Ponto,16.0,2026-07-12,2027-01-08,L260712-406,Estoque seco A,NORMAL,Sem ação
+CA-VLH-01,Valinhos,ING-009,Calda de caramelo,Grãos e pós,frasco,3.15,3,Doce Ponto,17.5,2026-07-11,2027-01-07,L260711-407,Estoque seco A,NORMAL,Sem ação
+CA-VLH-01,Valinhos,ING-010,Chocolate em pó,Grãos e pós,kg,2.55,3,Doce Ponto,22.0,2026-07-10,2027-03-07,L260710-408,Estoque seco A,ATENÇÃO,Incluir no próximo pedido
+CA-VLH-01,Valinhos,ING-014,Canela em pó,Grãos e pós,kg,2.0,1,Temperos Horizonte,28.0,2026-07-09,2027-07-09,L260709-409,Estoque seco A,NORMAL,Sem ação
+CA-VLH-01,Valinhos,ING-016,Queijo muçarela,Laticínios,kg,9.0,5,Laticínios Boa Serra,34.0,2026-07-08,2026-07-20,L260708-410,Refrigerador 1,NORMAL,Sem ação
+CA-VLH-01,Valinhos,ING-017,Peito de peru,Alimentos refrigerados,kg,2.55,3,Sabor & Corte,38.0,2026-07-07,2026-07-19,L260707-411,Refrigerador 3,ATENÇÃO,Incluir no próximo pedido
+CA-VLH-01,Valinhos,ING-018,Frango desfiado,Alimentos refrigerados,kg,1.8,4,Cozinha Central Aurora,29.0,2026-07-26,2026-08-03,L260726-412,Refrigerador 3,CRÍTICO,Solicitar reposição imediata
+CA-VLH-01,Valinhos,EMB-001,Copo quente 180 ml,Embalagens,un,570.0,300,PackBem Embalagens,0.22,2026-07-25,2028-07-24,L260725-413,Estoque seco B,NORMAL,Sem ação
+CA-VLH-01,Valinhos,EMB-002,Copo quente 300 ml,Embalagens,un,262.5,250,PackBem Embalagens,0.28,2026-07-24,2028-07-23,L260724-414,Estoque seco B,NORMAL,Sem ação
+CA-VLH-01,Valinhos,EMB-003,Copo frio 400 ml,Embalagens,un,212.5,250,PackBem Embalagens,0.32,2026-07-23,2028-07-22,L260723-415,Estoque seco B,ATENÇÃO,Incluir no próximo pedido
+CA-VLH-01,Valinhos,EMB-007,Tampa para bebida gelada,Embalagens,un,600.0,300,PackBem Embalagens,0.16,2026-07-22,2028-07-21,L260722-416,Estoque seco B,NORMAL,Sem ação
+CA-VLH-01,Valinhos,EMB-010,Sacola pequena,Embalagens,un,270.0,150,PackBem Embalagens,0.18,2026-07-21,2028-07-20,L260721-417,Estoque seco B,NORMAL,Sem ação
+CA-VLH-01,Valinhos,EMB-012,Guardanapo,Embalagens,un,850.0,1000,PackBem Embalagens,0.03,2026-07-20,2028-07-19,L260720-418,Estoque seco B,ATENÇÃO,Incluir no próximo pedido
+CA-VLH-01,Valinhos,LIM-001,Detergente neutro,Produtos de limpeza,L,2.25,5,Higiene Ideal,7.5,2026-07-19,2027-07-19,L260719-419,Armário de limpeza,CRÍTICO,Solicitar reposição imediata
+CA-VLH-01,Valinhos,LIM-002,Desinfetante de uso geral,Produtos de limpeza,L,9.5,5,Higiene Ideal,9.2,2026-07-18,2027-07-18,L260718-420,Armário de limpeza,NORMAL,Sem ação
+CA-CPS-04,Shopping Horizonte,ING-001,Café em grãos Aurora Clássico,Grãos e pós,kg,14.4,8,Serra Alta Cafés,18.5,2026-07-14,2026-11-11,L260714-501,Estoque seco A,NORMAL,Sem ação
+CA-CPS-04,Shopping Horizonte,ING-003,Leite integral,Laticínios,L,25.2,24,Laticínios Boa Serra,4.9,2026-07-13,2026-07-23,L260713-502,Refrigerador 1,NORMAL,Sem ação
+CA-CPS-04,Shopping Horizonte,ING-004,Leite sem lactose,Laticínios,L,6.8,8,Laticínios Boa Serra,6.2,2026-07-12,2026-07-24,L260712-503,Refrigerador 1,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-04,Shopping Horizonte,ING-005,Bebida vegetal de aveia,Bebidas vegetais,L,5.1,6,Verde Campo Alimentos,9.8,2026-07-11,2026-08-25,L260711-504,Refrigerador 2,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-04,Shopping Horizonte,ING-007,Bebida vegetal de soja,Bebidas vegetais,L,2.25,5,Verde Campo Alimentos,8.9,2026-07-10,2026-08-24,L260710-505,Refrigerador 2,CRÍTICO,Solicitar reposição imediata
+CA-CPS-04,Shopping Horizonte,ING-008,Calda de chocolate,Grãos e pós,frasco,8.0,4,Doce Ponto,16.0,2026-07-09,2027-01-05,L260709-506,Estoque seco A,NORMAL,Sem ação
+CA-CPS-04,Shopping Horizonte,ING-009,Calda de caramelo,Grãos e pós,frasco,5.7,3,Doce Ponto,17.5,2026-07-08,2027-01-04,L260708-507,Estoque seco A,NORMAL,Sem ação
+CA-CPS-04,Shopping Horizonte,ING-010,Chocolate em pó,Grãos e pós,kg,5.4,3,Doce Ponto,22.0,2026-07-07,2027-03-04,L260707-508,Estoque seco A,NORMAL,Sem ação
+CA-CPS-04,Shopping Horizonte,ING-014,Canela em pó,Grãos e pós,kg,1.05,1,Temperos Horizonte,28.0,2026-07-26,2027-07-26,L260726-509,Estoque seco A,NORMAL,Sem ação
+CA-CPS-04,Shopping Horizonte,ING-016,Queijo muçarela,Laticínios,kg,4.25,5,Laticínios Boa Serra,34.0,2026-07-25,2026-08-06,L260725-510,Refrigerador 1,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-04,Shopping Horizonte,ING-017,Peito de peru,Alimentos refrigerados,kg,2.55,3,Sabor & Corte,38.0,2026-07-24,2026-08-05,L260724-511,Refrigerador 3,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-04,Shopping Horizonte,ING-018,Frango desfiado,Alimentos refrigerados,kg,1.8,4,Cozinha Central Aurora,29.0,2026-07-23,2026-07-31,L260723-512,Refrigerador 3,CRÍTICO,Solicitar reposição imediata
+CA-CPS-04,Shopping Horizonte,EMB-001,Copo quente 180 ml,Embalagens,un,600.0,300,PackBem Embalagens,0.22,2026-07-22,2028-07-21,L260722-513,Estoque seco B,NORMAL,Sem ação
+CA-CPS-04,Shopping Horizonte,EMB-002,Copo quente 300 ml,Embalagens,un,475.0,250,PackBem Embalagens,0.28,2026-07-21,2028-07-20,L260721-514,Estoque seco B,NORMAL,Sem ação
+CA-CPS-04,Shopping Horizonte,EMB-003,Copo frio 400 ml,Embalagens,un,450.0,250,PackBem Embalagens,0.32,2026-07-20,2028-07-19,L260720-515,Estoque seco B,NORMAL,Sem ação
+CA-CPS-04,Shopping Horizonte,EMB-007,Tampa para bebida gelada,Embalagens,un,315.0,300,PackBem Embalagens,0.16,2026-07-19,2028-07-18,L260719-516,Estoque seco B,NORMAL,Sem ação
+CA-CPS-04,Shopping Horizonte,EMB-010,Sacola pequena,Embalagens,un,127.5,150,PackBem Embalagens,0.18,2026-07-18,2028-07-17,L260718-517,Estoque seco B,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-04,Shopping Horizonte,EMB-012,Guardanapo,Embalagens,un,850.0,1000,PackBem Embalagens,0.03,2026-07-17,2028-07-16,L260717-518,Estoque seco B,ATENÇÃO,Incluir no próximo pedido
+CA-CPS-04,Shopping Horizonte,LIM-001,Detergente neutro,Produtos de limpeza,L,2.25,5,Higiene Ideal,7.5,2026-07-16,2027-07-16,L260716-519,Armário de limpeza,CRÍTICO,Solicitar reposição imediata
+CA-CPS-04,Shopping Horizonte,LIM-002,Desinfetante de uso geral,Produtos de limpeza,L,10.0,5,Higiene Ideal,9.2,2026-07-15,2027-07-15,L260715-520,Armário de limpeza,NORMAL,Sem ação

@@ -1,0 +1,391 @@
+{
+  "documento": {
+    "codigo": "CA-TEC-CAD-001",
+    "titulo": "Configuração das Unidades",
+    "versao": "1.0",
+    "data_publicacao": "2026-01-16",
+    "data_vigencia": "2026-01-20",
+    "area_responsavel": "Tecnologia e Sistemas",
+    "aprovacao": "Gerência de Operações",
+    "classificacao": "Uso interno",
+    "uso_ficticio": true
+  },
+  "empresa": {
+    "nome_fantasia": "Café Aurora",
+    "razao_social": "Café Aurora Alimentos e Bebidas Ltda.",
+    "sede_administrativa": {
+      "cidade": "Campinas",
+      "estado": "SP",
+      "pais": "Brasil"
+    },
+    "total_unidades": 5
+  },
+  "configuracoes_globais": {
+    "moeda": "BRL",
+    "idioma_padrao": "pt-BR",
+    "fuso_horario": "America/Sao_Paulo",
+    "registro_ponto_obrigatorio": true,
+    "checklist_abertura_obrigatorio": true,
+    "checklist_fechamento_obrigatorio": true,
+    "controle_temperatura_obrigatorio": true,
+    "controle_validade_obrigatorio": true,
+    "permite_compra_direta_unidade": false,
+    "permite_desconto_manual_atendente": false,
+    "exige_registro_perdas": true,
+    "exige_registro_ocorrencias_graves": true
+  },
+  "unidades": [
+    {
+      "codigo": "CA-CPS-01",
+      "nome": "Centro",
+      "cidade": "Campinas",
+      "estado": "SP",
+      "regiao": "Centro",
+      "status": "ativa",
+      "perfil": "alto fluxo em horário comercial",
+      "gerente": "Mariana Lopes",
+      "quantidade_colaboradores": 16,
+      "horarios": {
+        "segunda": {
+          "abre": "07:00",
+          "fecha": "20:00"
+        },
+        "terca": {
+          "abre": "07:00",
+          "fecha": "20:00"
+        },
+        "quarta": {
+          "abre": "07:00",
+          "fecha": "20:00"
+        },
+        "quinta": {
+          "abre": "07:00",
+          "fecha": "20:00"
+        },
+        "sexta": {
+          "abre": "07:00",
+          "fecha": "20:00"
+        },
+        "sabado": {
+          "abre": "07:00",
+          "fecha": "20:00"
+        },
+        "domingo": null
+      },
+      "servicos": {
+        "consumo_local": true,
+        "viagem": true,
+        "delivery": false,
+        "reservas_pequenas_reunioes": false
+      },
+      "recursos": {
+        "quantidade_caixas": 2,
+        "maquinas_espresso": 2,
+        "fornos": 1,
+        "refrigeradores": 3,
+        "freezers": 1,
+        "wifi_clientes": true
+      },
+      "regras_especificas": [
+        "Priorizar atendimento rápido no horário de almoço.",
+        "Manter estoque reforçado de cafés e refeições rápidas."
+      ]
+    },
+    {
+      "codigo": "CA-CPS-02",
+      "nome": "Cambuí",
+      "cidade": "Campinas",
+      "estado": "SP",
+      "regiao": "Cambuí",
+      "status": "ativa",
+      "perfil": "público residencial e profissional",
+      "gerente": "Rafael Mendes",
+      "quantidade_colaboradores": 15,
+      "horarios": {
+        "segunda": {
+          "abre": "08:00",
+          "fecha": "21:00"
+        },
+        "terca": {
+          "abre": "08:00",
+          "fecha": "21:00"
+        },
+        "quarta": {
+          "abre": "08:00",
+          "fecha": "21:00"
+        },
+        "quinta": {
+          "abre": "08:00",
+          "fecha": "21:00"
+        },
+        "sexta": {
+          "abre": "08:00",
+          "fecha": "21:00"
+        },
+        "sabado": {
+          "abre": "08:00",
+          "fecha": "21:00"
+        },
+        "domingo": {
+          "abre": "08:00",
+          "fecha": "21:00"
+        }
+      },
+      "servicos": {
+        "consumo_local": true,
+        "viagem": true,
+        "delivery": false,
+        "reservas_pequenas_reunioes": true
+      },
+      "recursos": {
+        "quantidade_caixas": 2,
+        "maquinas_espresso": 2,
+        "fornos": 1,
+        "refrigeradores": 3,
+        "freezers": 1,
+        "wifi_clientes": true
+      },
+      "regras_especificas": [
+        "Monitorar aumento de demanda aos finais de semana.",
+        "Reservas de mesas devem ser confirmadas pelo gerente."
+      ]
+    },
+    {
+      "codigo": "CA-CPS-03",
+      "nome": "Barão Geraldo",
+      "cidade": "Campinas",
+      "estado": "SP",
+      "regiao": "Barão Geraldo",
+      "status": "ativa",
+      "perfil": "estudantes e profissionais acadêmicos",
+      "gerente": "Juliana Prado",
+      "quantidade_colaboradores": 14,
+      "horarios": {
+        "segunda": {
+          "abre": "08:00",
+          "fecha": "22:00"
+        },
+        "terca": {
+          "abre": "08:00",
+          "fecha": "22:00"
+        },
+        "quarta": {
+          "abre": "08:00",
+          "fecha": "22:00"
+        },
+        "quinta": {
+          "abre": "08:00",
+          "fecha": "22:00"
+        },
+        "sexta": {
+          "abre": "08:00",
+          "fecha": "22:00"
+        },
+        "sabado": {
+          "abre": "08:00",
+          "fecha": "22:00"
+        },
+        "domingo": null
+      },
+      "servicos": {
+        "consumo_local": true,
+        "viagem": true,
+        "delivery": false,
+        "reservas_pequenas_reunioes": false
+      },
+      "recursos": {
+        "quantidade_caixas": 2,
+        "maquinas_espresso": 2,
+        "fornos": 1,
+        "refrigeradores": 3,
+        "freezers": 1,
+        "wifi_clientes": true
+      },
+      "regras_especificas": [
+        "Manter disponibilidade ampliada de bebidas geladas.",
+        "Acompanhar ocupação prolongada das mesas nos horários de pico."
+      ]
+    },
+    {
+      "codigo": "CA-VLH-01",
+      "nome": "Valinhos",
+      "cidade": "Valinhos",
+      "estado": "SP",
+      "regiao": "Centro",
+      "status": "ativa",
+      "perfil": "famílias e clientes locais",
+      "gerente": "Felipe Costa",
+      "quantidade_colaboradores": 13,
+      "horarios": {
+        "segunda": {
+          "abre": "08:00",
+          "fecha": "20:00"
+        },
+        "terca": {
+          "abre": "08:00",
+          "fecha": "20:00"
+        },
+        "quarta": {
+          "abre": "08:00",
+          "fecha": "20:00"
+        },
+        "quinta": {
+          "abre": "08:00",
+          "fecha": "20:00"
+        },
+        "sexta": {
+          "abre": "08:00",
+          "fecha": "20:00"
+        },
+        "sabado": {
+          "abre": "08:00",
+          "fecha": "20:00"
+        },
+        "domingo": {
+          "abre": "08:00",
+          "fecha": "20:00"
+        }
+      },
+      "servicos": {
+        "consumo_local": true,
+        "viagem": true,
+        "delivery": false,
+        "reservas_pequenas_reunioes": false
+      },
+      "recursos": {
+        "quantidade_caixas": 1,
+        "maquinas_espresso": 1,
+        "fornos": 1,
+        "refrigeradores": 2,
+        "freezers": 1,
+        "wifi_clientes": true
+      },
+      "regras_especificas": [
+        "Reforçar operação aos sábados.",
+        "Manter disponibilidade dos combos de café da manhã."
+      ]
+    },
+    {
+      "codigo": "CA-CPS-04",
+      "nome": "Shopping Horizonte",
+      "cidade": "Campinas",
+      "estado": "SP",
+      "regiao": "Shopping Horizonte",
+      "status": "ativa",
+      "perfil": "clientes em trânsito e consumidores do shopping",
+      "gerente": "Beatriz Nogueira",
+      "quantidade_colaboradores": 14,
+      "horarios": {
+        "segunda": {
+          "abre": "10:00",
+          "fecha": "22:00"
+        },
+        "terca": {
+          "abre": "10:00",
+          "fecha": "22:00"
+        },
+        "quarta": {
+          "abre": "10:00",
+          "fecha": "22:00"
+        },
+        "quinta": {
+          "abre": "10:00",
+          "fecha": "22:00"
+        },
+        "sexta": {
+          "abre": "10:00",
+          "fecha": "22:00"
+        },
+        "sabado": {
+          "abre": "10:00",
+          "fecha": "22:00"
+        },
+        "domingo": {
+          "abre": "10:00",
+          "fecha": "22:00"
+        }
+      },
+      "servicos": {
+        "consumo_local": false,
+        "viagem": true,
+        "delivery": false,
+        "reservas_pequenas_reunioes": false
+      },
+      "recursos": {
+        "quantidade_caixas": 2,
+        "maquinas_espresso": 2,
+        "fornos": 1,
+        "refrigeradores": 2,
+        "freezers": 1,
+        "wifi_clientes": false
+      },
+      "regras_especificas": [
+        "Recebimentos somente nos horários autorizados pelo shopping.",
+        "Utilizar exclusivamente a área de carga e descarga indicada.",
+        "Não bloquear corredores ou áreas comuns.",
+        "Acionar a administração do shopping em quedas de energia ou emergências."
+      ]
+    }
+  ],
+  "integracoes": {
+    "sistema_vendas": {
+      "nome": "Aurora POS",
+      "ativo": true,
+      "modo_contingencia": true,
+      "operacao_manual_exige_autorizacao": true
+    },
+    "controle_estoque": {
+      "nome": "Aurora Stock",
+      "ativo": true,
+      "contagem_semanal": true,
+      "alerta_estoque_minimo": true,
+      "alerta_validade": true
+    },
+    "portal_interno": {
+      "nome": "Portal Aurora",
+      "ativo": true,
+      "acesso_agente_ia": true
+    }
+  },
+  "permissoes_por_funcao": {
+    "atendente": {
+      "registrar_pedido": true,
+      "registrar_perda": true,
+      "refazer_pedido_incorreto": true,
+      "autorizar_desconto": false,
+      "aprovar_compra": false,
+      "recusar_mercadoria": false
+    },
+    "lider_turno": {
+      "registrar_pedido": true,
+      "registrar_perda": true,
+      "refazer_pedido_incorreto": true,
+      "autorizar_desconto": "conforme_campanha",
+      "aprovar_compra": false,
+      "recusar_mercadoria": true
+    },
+    "gerente_unidade": {
+      "registrar_pedido": true,
+      "registrar_perda": true,
+      "refazer_pedido_incorreto": true,
+      "autorizar_desconto": "dentro_limite_definido",
+      "aprovar_compra": "conforme_politica",
+      "recusar_mercadoria": true
+    }
+  },
+  "regras_agente_ia": {
+    "nome": "Aurora Responde",
+    "acesso": "todos_os_colaboradores",
+    "deve_citar_fonte": true,
+    "deve_informar_ausencia_de_resposta": true,
+    "deve_sinalizar_conflito_documental": true,
+    "deve_diferenciar_regra_geral_e_especifica": true,
+    "nao_deve_fornecer": [
+      "senhas",
+      "credenciais",
+      "dados_bancarios",
+      "dados_medicos",
+      "informacoes_pessoais_sensiveis"
+    ]
+  }
+}

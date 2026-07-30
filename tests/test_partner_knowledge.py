@@ -27,6 +27,16 @@ def test_partner_knowledge_settings_accept_configured_retrieval_values(tmp_path:
     assert settings.relevance_threshold == 0.83
 
 
+def test_partner_knowledge_settings_use_a_domain_environment_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("PARTNER_KNOWLEDGE_EMBEDDING_MODEL", "test-embedding-model")
+
+    settings = PartnerKnowledgeSettings(_env_file=None)
+
+    assert settings.embedding_model == "test-embedding-model"
+
+
 def test_persistent_chroma_retriever_rejects_a_missing_index(tmp_path: Path):
     retriever = PersistentChromaRetriever(tmp_path / "missing-index")
 
