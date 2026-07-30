@@ -34,15 +34,17 @@ from src.main import (  # noqa: E402
     get_agent,
     get_cache,
     get_metrics,
+    get_partner_knowledge_retriever,
     get_security,
     limiter,
 )
 from src.monitoring import MetricsCollector  # noqa: E402
+from src.partner_knowledge.retrieval import RetrievedEvidence  # noqa: E402
 from src.security import SecurityPipeline  # noqa: E402
 
 DEFAULT_AGENT_RESPONSE = "Today's special is grilled salmon with roasted vegetables."
 
-STATE_ATTRS = ("agent", "security", "cache", "metrics")
+STATE_ATTRS = ("agent", "security", "cache", "metrics", "partner_knowledge_retriever")
 
 
 class FakeAgent:
@@ -63,9 +65,14 @@ class FakeAgent:
         self.model_used = model_used
         self.raises = raises
         self.calls: list[str] = []
+        self.evidence_calls: list[list[RetrievedEvidence]] = []
 
-    def invoke(self, message: str) -> dict:
+    def invoke(
+        self, message: str, evidence: list[RetrievedEvidence] | None = None
+    ) -> dict:
         self.calls.append(message)
+        if evidence is not None:
+            self.evidence_calls.append(evidence)
         if self.raises is not None:
             raise self.raises
         return {
@@ -73,6 +80,27 @@ class FakeAgent:
             "model_used": self.model_used,
             "error": None,
         }
+
+
+class FakePartnerKnowledgeRetriever:
+    def __init__(self):
+        self.evidence = [
+            RetrievedEvidence(
+                text="Today's special is grilled salmon with roasted vegetables.",
+                document_name="Catálogo de Produtos e Ingredientes — Café Aurora",
+                location="Página 1",
+                technical_location="page:1",
+                relevance_score=0.99,
+            )
+        ]
+        self.queries: list[str] = []
+
+    def ensure_available(self) -> None:
+        pass
+
+    def retrieve(self, query: str) -> list[RetrievedEvidence]:
+        self.queries.append(query)
+        return self.evidence
 
 
 @dataclass
@@ -83,6 +111,9 @@ class Components:
     security: SecurityPipeline = field(default_factory=SecurityPipeline)
     cache: ResponseCache = field(default_factory=lambda: ResponseCache(ttl_seconds=300))
     metrics: MetricsCollector = field(default_factory=MetricsCollector)
+    partner_knowledge_retriever: FakePartnerKnowledgeRetriever = field(
+        default_factory=FakePartnerKnowledgeRetriever
+    )
 
 
 def _clear_app_state() -> None:
@@ -113,11 +144,21 @@ def metrics(components: Components) -> MetricsCollector:
 
 
 @pytest.fixture
+def partner_knowledge_retriever(
+    components: Components,
+) -> FakePartnerKnowledgeRetriever:
+    return components.partner_knowledge_retriever
+
+
+@pytest.fixture
 async def client(components: Components):
     app.dependency_overrides[get_agent] = lambda: components.agent
     app.dependency_overrides[get_security] = lambda: components.security
     app.dependency_overrides[get_cache] = lambda: components.cache
     app.dependency_overrides[get_metrics] = lambda: components.metrics
+    app.dependency_overrides[get_partner_knowledge_retriever] = lambda: (
+        components.partner_knowledge_retriever
+    )
 
     # `/health` reads `app.state` directly instead of going through DI, and
     # ASGITransport does not run lifespan events, so populate it by hand.

@@ -1,5 +1,14 @@
 import hashlib
 import time
+from dataclasses import dataclass
+
+from src.models import SourceCitation
+
+
+@dataclass(frozen=True)
+class CachedChatResponse:
+    response: str
+    sources: list[SourceCitation]
 
 
 class ResponseCache:
@@ -15,7 +24,7 @@ class ResponseCache:
 
     # 'What is Python?' and 'what is python?'
 
-    def get(self, query: str) -> str | None:
+    def get(self, query: str) -> str | CachedChatResponse | None:
         key = self._make_key(query)
 
         if key in self._cache:
@@ -30,7 +39,7 @@ class ResponseCache:
         self._misses += 1
         return None
 
-    def set(self, query: str, response: str) -> None:
+    def set(self, query: str, response: str | CachedChatResponse) -> None:
         key = self._make_key(query)
         self._cache[key] = {
             "response": response,

@@ -120,7 +120,11 @@ class PartnerKnowledgeIngestor:
             client = chromadb.PersistentClient(
                 path=str(self._settings.partner_index_path)
             )
-            collection = client.create_collection(staging_name, embedding_function=None)
+            collection = client.create_collection(
+                staging_name,
+                embedding_function=None,
+                metadata={"hnsw:space": "cosine"},
+            )
             collection.add(
                 ids=[chunk.id for chunk in chunks],
                 documents=[chunk.text for chunk in chunks],

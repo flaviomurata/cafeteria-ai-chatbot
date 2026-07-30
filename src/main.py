@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from langsmith import traceable
 from slowapi import Limiter
@@ -9,19 +11,21 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from src.agent import ProductionAgent
-from src.cache import ResponseCache
+from src.cache import CachedChatResponse, ResponseCache
 from src.config import get_settings
 from src.models import (
     ChatRequest,
     ChatResponse,
     HealthResponse,
     MetricsResponse,
+    SourceCitation,
 )
 from src.monitoring import MetricsCollector, RequestTimer, get_logger
 from src.partner_knowledge.config import get_partner_knowledge_settings
 from src.partner_knowledge.retrieval import (
     PartnerKnowledgeRetriever,
     PersistentChromaRetriever,
+    RetrievedEvidence,
 )
 from src.security import SecurityPipeline
 
@@ -72,7 +76,9 @@ async def lifespan(app: FastAPI):
     app.state.cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
     app.state.metrics = MetricsCollector()
     app.state.partner_knowledge_retriever = PersistentChromaRetriever(
-        partner_knowledge_settings.partner_index_path
+        partner_knowledge_settings.partner_index_path,
+        candidate_limit=partner_knowledge_settings.retrieval_candidate_limit,
+        relevance_threshold=partner_knowledge_settings.relevance_threshold,
     )
     await run_in_threadpool(app.state.partner_knowledge_retriever.ensure_available)
     app.state.agent = ProductionAgent()
@@ -123,10 +129,13 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 async def chat(
     request: Request,  # noqa: ARG001 -- required by slowapi's @limiter.limit
     body: ChatRequest,
-    security: SecurityPipeline = Depends(get_security),
-    cache: ResponseCache = Depends(get_cache),
-    metrics: MetricsCollector = Depends(get_metrics),
-    agent: ProductionAgent = Depends(get_agent),
+    security: Annotated[SecurityPipeline, Depends(get_security)],
+    cache: Annotated[ResponseCache, Depends(get_cache)],
+    metrics: Annotated[MetricsCollector, Depends(get_metrics)],
+    agent: Annotated[ProductionAgent, Depends(get_agent)],
+    partner_knowledge_retriever: Annotated[
+        PartnerKnowledgeRetriever, Depends(get_partner_knowledge_retriever)
+    ],
 ):
     with RequestTimer() as timer:
         security_notes = []
@@ -171,6 +180,11 @@ async def chat(
         # ---- Step 2: Cache Lookup ----
         cached_response = cache.get(cleaned_message)
         if cached_response is not None:
+            if isinstance(cached_response, CachedChatResponse):
+                response_text = cached_response.response
+                sources = cached_response.sources
+            else:
+                response_text, sources = cached_response, []
             metrics.record_request(latency_ms=0, cache_hit=True)
             logger.info(
                 "Cache hit",
@@ -181,17 +195,27 @@ async def chat(
                 },
             )
             return {
-                "response": cached_response,
+                "response": response_text,
                 "thread_id": body.thread_id,
                 "model_used": "cache",
                 "cached": True,
                 "processing_time_ms": 0,
+                "sources": sources,
                 "security_notes": security_notes,
             }
 
-        # ---- Step 3: Invoke LangGraph Agent ----
+        # ---- Step 3: Retrieve Partner knowledge, then invoke the agent ----
+        evidence = await run_in_threadpool(
+            partner_knowledge_retriever.retrieve, cleaned_message
+        )
+        if not evidence:
+            return _scope_refusal(body.thread_id, security_notes, metrics)
+        selected_evidence = evidence[:3]
+        sources = _build_sources(selected_evidence)
         try:
-            result = agent.invoke(cleaned_message)
+            result = await run_in_threadpool(
+                agent.invoke, cleaned_message, selected_evidence
+            )
         except Exception as e:
             logger.error(
                 f"Agent invocation failed: {e}",
@@ -210,13 +234,22 @@ async def chat(
 
         response_text = result["response"]
         model_used = result["model_used"]
+        if model_used == "error_handler":
+            metrics.record_request(latency_ms=0, error=True)
+            raise HTTPException(
+                status_code=503,
+                detail="The grounded answer service is temporarily unavailable.",
+            )
 
         # ---- Step 4: Output Validation ----
         validated_response, output_warnings = security.check_output(response_text)
         security_notes.extend(output_warnings)
 
         # ---- Step 5: Cache Store ----
-        cache.set(cleaned_message, validated_response)
+        cache.set(
+            cleaned_message,
+            CachedChatResponse(response=validated_response, sources=sources),
+        )
 
     # ---- Step 6: Log & Record Metrics ----
     input_tokens = int(len(cleaned_message.split()) * 1.3)
@@ -257,6 +290,42 @@ async def chat(
         "model_used": model_used,
         "cached": False,
         "processing_time_ms": round(timer.elapsed_ms, 2),
+        "sources": sources,
+        "security_notes": security_notes,
+    }
+
+
+def _build_sources(evidence: list[RetrievedEvidence]) -> list[SourceCitation]:
+    sources: list[SourceCitation] = []
+    seen: set[tuple[str, str]] = set()
+    for item in evidence:
+        key = (item.document_name, item.location)
+        if key not in seen:
+            seen.add(key)
+            sources.append(
+                SourceCitation(
+                    document_name=item.document_name,
+                    location=item.location,
+                )
+            )
+        if len(sources) == 3:
+            break
+    return sources
+
+
+def _scope_refusal(
+    thread_id: str, security_notes: list[str], metrics: MetricsCollector
+) -> dict:
+    metrics.record_request(latency_ms=0, error=False)
+    return {
+        "response": (
+            "I can only answer questions supported by Café Aurora Partner knowledge."
+        ),
+        "thread_id": thread_id,
+        "model_used": "grounding_refusal",
+        "cached": False,
+        "processing_time_ms": 0,
+        "sources": [],
         "security_notes": security_notes,
     }
 

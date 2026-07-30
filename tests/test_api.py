@@ -9,8 +9,9 @@ cache, and metrics run for real.
 import pytest
 from httpx import AsyncClient
 
-from src.cache import ResponseCache
+from src.cache import CachedChatResponse, ResponseCache
 from src.monitoring import MetricsCollector
+from src.partner_knowledge.retrieval import RetrievedEvidence
 from tests.conftest import DEFAULT_AGENT_RESPONSE, RATE_LIMIT_PER_MINUTE, FakeAgent
 
 CHAT_URL = "/chat"
@@ -40,6 +41,39 @@ async def test_chat_returns_the_agent_response(client: AsyncClient, agent: FakeA
 
 
 @pytest.mark.asyncio
+async def test_chat_returns_grounded_answer_with_public_source_citations(
+    client: AsyncClient, agent: FakeAgent, partner_knowledge_retriever
+):
+    partner_knowledge_retriever.evidence = [
+        RetrievedEvidence(
+            text="O café coado utiliza grãos Arábica.",
+            document_name="Catálogo de Produtos e Ingredientes — Café Aurora",
+            location="Página 2",
+            technical_location="page:2",
+            relevance_score=0.97,
+        )
+    ]
+    agent.response = "O café coado utiliza grãos Arábica."
+
+    response = await client.post(
+        CHAT_URL, json={"message": "Quais grãos o café coado utiliza?"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response"] == "O café coado utiliza grãos Arábica."
+    assert body["sources"] == [
+        {
+            "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+            "location": "Página 2",
+        }
+    ]
+    assert "technical_location" not in body["sources"][0]
+    assert "relevance_score" not in body["sources"][0]
+    assert agent.evidence_calls == [partner_knowledge_retriever.evidence]
+
+
+@pytest.mark.asyncio
 async def test_chat_defaults_the_thread_id(client: AsyncClient):
     resp = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
 
@@ -49,13 +83,14 @@ async def test_chat_defaults_the_thread_id(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_chat_reports_the_model_the_agent_used(
-    client: AsyncClient, agent: FakeAgent
+    client: AsyncClient, agent: FakeAgent, partner_knowledge_retriever
 ):
     agent.model_used = "fallback"
 
     resp = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
 
     assert resp.json()["model_used"] == "fallback"
+    assert agent.evidence_calls == [partner_knowledge_retriever.evidence]
 
 
 @pytest.mark.asyncio
@@ -136,7 +171,10 @@ async def test_chat_stores_the_response_in_the_cache(
 ):
     await client.post(CHAT_URL, json={"message": "What is for lunch?"})
 
-    assert cache.get("What is for lunch?") == DEFAULT_AGENT_RESPONSE
+    cached = cache.get("What is for lunch?")
+    assert isinstance(cached, CachedChatResponse)
+    assert cached.response == DEFAULT_AGENT_RESPONSE
+    assert cached.sources
 
 
 @pytest.mark.asyncio
@@ -150,7 +188,131 @@ async def test_cache_stores_the_validated_response_not_the_raw_one(
 
     assert first.json()["response"] == "Mail the chef at [EMAIL REDACTED]"
     assert second.json()["response"] == "Mail the chef at [EMAIL REDACTED]"
-    assert cache.get("How do I reach the chef?") == "Mail the chef at [EMAIL REDACTED]"
+    cached = cache.get("How do I reach the chef?")
+    assert isinstance(cached, CachedChatResponse)
+    assert cached.response == "Mail the chef at [EMAIL REDACTED]"
+
+
+@pytest.mark.asyncio
+async def test_chat_preserves_sources_when_served_from_cache(
+    client: AsyncClient, agent: FakeAgent, partner_knowledge_retriever
+):
+    partner_knowledge_retriever.evidence = [
+        RetrievedEvidence(
+            text="Reembolsos exigem comprovante.",
+            document_name="Política de Despesas e Reembolsos",
+            location="Seção: Reembolsos",
+            technical_location="section:3",
+            relevance_score=0.96,
+        )
+    ]
+
+    first = await client.post(CHAT_URL, json={"message": "Como funcionam reembolsos?"})
+    second = await client.post(CHAT_URL, json={"message": "Como funcionam reembolsos?"})
+
+    assert first.json()["sources"] == second.json()["sources"]
+    assert second.json()["cached"] is True
+    assert len(agent.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_deduplicated_multi_source_citations(
+    client: AsyncClient, agent: FakeAgent, partner_knowledge_retriever
+):
+    partner_knowledge_retriever.evidence = [
+        RetrievedEvidence(
+            text="A unidade CA-01 abre às 7h.",
+            document_name="Configuração das Unidades",
+            location="Unidade CA-01 — Centro",
+            technical_location="json:unidades[0]",
+            relevance_score=0.98,
+        ),
+        RetrievedEvidence(
+            text="O atendimento começa com saudação cordial.",
+            document_name="Guia de Atendimento ao Cliente",
+            location="Seção: Recepção",
+            technical_location="section:1",
+            relevance_score=0.97,
+        ),
+    ]
+    agent.response = "A CA-01 abre às 7h e o atendimento começa com saudação cordial."
+
+    response = await client.post(
+        CHAT_URL, json={"message": "Como funciona a abertura da CA-01?"}
+    )
+
+    assert response.json()["sources"] == [
+        {
+            "document_name": "Configuração das Unidades",
+            "location": "Unidade CA-01 — Centro",
+        },
+        {
+            "document_name": "Guia de Atendimento ao Cliente",
+            "location": "Seção: Recepção",
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chat_cites_both_sides_of_a_document_conflict(
+    client: AsyncClient, agent: FakeAgent, partner_knowledge_retriever
+):
+    partner_knowledge_retriever.evidence = [
+        RetrievedEvidence(
+            text="Aprovação é necessária para despesas acima de R$ 150.",
+            document_name="Política de Despesas e Reembolsos",
+            location="Seção: Aprovações",
+            technical_location="section:2",
+            relevance_score=0.98,
+        ),
+        RetrievedEvidence(
+            text="Aprovação é necessária para despesas acima de R$ 100.",
+            document_name="Manual de Operações das Unidades — Café Aurora",
+            location="Página 5",
+            technical_location="page:5",
+            relevance_score=0.97,
+        ),
+    ]
+    agent.response = (
+        "Os documentos divergem entre R$ 100 e R$ 150; não posso selecionar uma regra."
+    )
+
+    response = await client.post(
+        CHAT_URL, json={"message": "Qual é o limite de aprovação de despesas?"}
+    )
+
+    body = response.json()
+    assert "divergem" in body["response"]
+    assert "não posso selecionar" in body["response"]
+    assert len(body["sources"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_chat_does_not_cache_an_agent_exhaustion_message(
+    client: AsyncClient, agent: FakeAgent, cache: ResponseCache
+):
+    agent.model_used = "error_handler"
+
+    response = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
+
+    assert response.status_code == 503
+    assert cache.get("What is for lunch?") is None
+
+
+@pytest.mark.asyncio
+async def test_chat_refuses_a_question_without_supported_evidence(
+    client: AsyncClient, agent: FakeAgent, partner_knowledge_retriever
+):
+    partner_knowledge_retriever.evidence = []
+
+    response = await client.post(
+        CHAT_URL, json={"message": "Qual é a capital da França?"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["model_used"] == "grounding_refusal"
+    assert response.json()["sources"] == []
+    assert agent.calls == []
 
 
 # --------------------------------------------------------------------------- #

@@ -87,6 +87,48 @@ def test_persistent_chroma_retriever_rejects_an_empty_index(tmp_path: Path):
         retriever.ensure_available()
 
 
+def test_persistent_chroma_retriever_returns_only_relevant_citation_ready_evidence(
+    tmp_path: Path,
+):
+    index_path = tmp_path / "index"
+    collection = chromadb.PersistentClient(
+        path=str(index_path)
+    ).get_or_create_collection("partner_knowledge", metadata={"hnsw:space": "cosine"})
+    collection.add(
+        ids=["catalog-1", "catalog-2"],
+        documents=["Café coado usa grãos Arábica.", "Regra não relacionada."],
+        metadatas=[
+            {
+                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "location": "Página 2",
+                "technical_location": "page:2",
+            },
+            {
+                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "location": "Página 3",
+                "technical_location": "page:3",
+            },
+        ],
+        embeddings=[[1.0, 0.0], [0.0, 1.0]],
+    )
+    retriever = PersistentChromaRetriever(
+        index_path,
+        embed_query=lambda _: [1.0, 0.0],
+        candidate_limit=2,
+        relevance_threshold=0.75,
+    )
+
+    evidence = retriever.retrieve("Quais grãos o café coado utiliza?")
+
+    assert len(evidence) == 1
+    assert (
+        evidence[0].document_name == "Catálogo de Produtos e Ingredientes — Café Aurora"
+    )
+    assert evidence[0].location == "Página 2"
+    assert evidence[0].technical_location == "page:2"
+    assert evidence[0].relevance_score == 1.0
+
+
 def test_persistent_chroma_retriever_rejects_an_invalid_chroma_database(
     tmp_path: Path,
 ):

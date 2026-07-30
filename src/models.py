@@ -22,12 +22,20 @@ class ChatRequest(BaseModel):
     )
 
 
+class SourceCitation(BaseModel):
+    """Public, verification-ready reference for a grounded answer."""
+
+    document_name: str
+    location: str
+
+
 class ChatResponse(BaseModel):
     response: str
     thread_id: str
     model_used: str
     cached: bool = False
     processing_time_ms: float
+    sources: list[SourceCitation] = Field(default_factory=list)
     security_notes: list[str] = Field(default_factory=list)
     timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
