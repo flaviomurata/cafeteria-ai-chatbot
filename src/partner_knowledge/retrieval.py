@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -49,9 +50,19 @@ class PersistentChromaRetriever:
             )
 
         try:
-            with database_path.open("rb") as index_file:
-                index_file.read(1)
-        except OSError as exc:
+            connection = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+            with connection:
+                collection_table = connection.execute(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'collections'"
+                ).fetchone()
+        except sqlite3.Error as exc:
             raise PartnerKnowledgeIndexUnavailableError(
                 f"Partner knowledge index is unreadable at {self._index_path}."
             ) from exc
+
+        if collection_table is None:
+            raise PartnerKnowledgeIndexUnavailableError(
+                "Partner knowledge index is not a valid Chroma index at "
+                f"{self._index_path}."
+            )

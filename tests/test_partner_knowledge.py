@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -45,10 +46,24 @@ def test_persistent_chroma_retriever_rejects_an_incomplete_index(tmp_path: Path)
 def test_persistent_chroma_retriever_accepts_a_readable_chroma_index(tmp_path: Path):
     index_path = tmp_path / "index"
     index_path.mkdir()
-    (index_path / "chroma.sqlite3").touch()
+    database_path = index_path / "chroma.sqlite3"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("CREATE TABLE collections (id TEXT PRIMARY KEY)")
     retriever = PersistentChromaRetriever(index_path)
 
     retriever.ensure_available()
+
+
+def test_persistent_chroma_retriever_rejects_an_invalid_sqlite_database(
+    tmp_path: Path,
+):
+    index_path = tmp_path / "index"
+    index_path.mkdir()
+    (index_path / "chroma.sqlite3").write_text("not a sqlite database")
+    retriever = PersistentChromaRetriever(index_path)
+
+    with pytest.raises(PartnerKnowledgeIndexUnavailableError, match="unreadable"):
+        retriever.ensure_available()
 
 
 @pytest.mark.asyncio
