@@ -217,5 +217,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Generated Partner knowledge index
+data/partner-knowledge-index/
+
 AGENTS.md
 CLAUDE.md

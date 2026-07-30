@@ -18,6 +18,11 @@ from src.models import (
     MetricsResponse,
 )
 from src.monitoring import MetricsCollector, RequestTimer, get_logger
+from src.partner_knowledge.config import get_partner_knowledge_settings
+from src.partner_knowledge.retrieval import (
+    PartnerKnowledgeRetriever,
+    PersistentChromaRetriever,
+)
 from src.security import SecurityPipeline
 
 load_dotenv()
@@ -41,9 +46,14 @@ def get_agent(request: Request) -> ProductionAgent:
     return request.app.state.agent
 
 
+def get_partner_knowledge_retriever(request: Request) -> PartnerKnowledgeRetriever:
+    return request.app.state.partner_knowledge_retriever
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    partner_knowledge_settings = get_partner_knowledge_settings()
 
     logger.info(
         "Starting production API...",
@@ -59,6 +69,10 @@ async def lifespan(app: FastAPI):
     app.state.security = SecurityPipeline()
     app.state.cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
     app.state.metrics = MetricsCollector()
+    app.state.partner_knowledge_retriever = PersistentChromaRetriever(
+        partner_knowledge_settings.partner_index_path
+    )
+    app.state.partner_knowledge_retriever.ensure_available()
     app.state.agent = ProductionAgent()
 
     logger.info("All components initialized. Ready to serve requests.")
