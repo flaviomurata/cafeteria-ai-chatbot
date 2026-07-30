@@ -52,6 +52,8 @@ def get_partner_knowledge_retriever(request: Request) -> PartnerKnowledgeRetriev
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from fastapi.concurrency import run_in_threadpool
+
     settings = get_settings()
     partner_knowledge_settings = get_partner_knowledge_settings()
 
@@ -72,7 +74,7 @@ async def lifespan(app: FastAPI):
     app.state.partner_knowledge_retriever = PersistentChromaRetriever(
         partner_knowledge_settings.partner_index_path
     )
-    app.state.partner_knowledge_retriever.ensure_available()
+    await run_in_threadpool(app.state.partner_knowledge_retriever.ensure_available)
     app.state.agent = ProductionAgent()
 
     logger.info("All components initialized. Ready to serve requests.")

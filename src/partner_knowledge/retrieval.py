@@ -1,6 +1,8 @@
-import sqlite3
 from pathlib import Path
 from typing import Protocol, runtime_checkable
+
+import chromadb
+from chromadb.errors import ChromaError
 
 
 class PartnerKnowledgeIndexUnavailableError(RuntimeError):
@@ -23,8 +25,6 @@ class PersistentChromaRetriever:
     changes.
     """
 
-    _DATABASE_FILENAME = "chroma.sqlite3"
-
     def __init__(self, index_path: Path):
         self._index_path = index_path
 
@@ -41,28 +41,18 @@ class PersistentChromaRetriever:
                 f"Partner knowledge index path is not a directory: {self._index_path}"
             )
 
-        database_path = self._index_path / self._DATABASE_FILENAME
+        database_path = self._index_path / "chroma.sqlite3"
         if not database_path.is_file():
             raise PartnerKnowledgeIndexUnavailableError(
                 "Partner knowledge index is incomplete or unreadable at "
-                f"{self._index_path}: expected {self._DATABASE_FILENAME}. "
+                f"{self._index_path}: expected chroma.sqlite3. "
                 "Run the Partner knowledge ingestion operation before starting the API."
             )
 
         try:
-            connection = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
-            with connection:
-                collection_table = connection.execute(
-                    "SELECT 1 FROM sqlite_master "
-                    "WHERE type = 'table' AND name = 'collections'"
-                ).fetchone()
-        except sqlite3.Error as exc:
+            client = chromadb.PersistentClient(path=str(self._index_path))
+            client.list_collections()
+        except (ChromaError, OSError, ValueError) as exc:
             raise PartnerKnowledgeIndexUnavailableError(
                 f"Partner knowledge index is unreadable at {self._index_path}."
             ) from exc
-
-        if collection_table is None:
-            raise PartnerKnowledgeIndexUnavailableError(
-                "Partner knowledge index is not a valid Chroma index at "
-                f"{self._index_path}."
-            )

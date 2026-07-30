@@ -1,6 +1,6 @@
-import sqlite3
 from pathlib import Path
 
+import chromadb
 import pytest
 
 from src.main import app
@@ -46,15 +46,14 @@ def test_persistent_chroma_retriever_rejects_an_incomplete_index(tmp_path: Path)
 def test_persistent_chroma_retriever_accepts_a_readable_chroma_index(tmp_path: Path):
     index_path = tmp_path / "index"
     index_path.mkdir()
-    database_path = index_path / "chroma.sqlite3"
-    with sqlite3.connect(database_path) as connection:
-        connection.execute("CREATE TABLE collections (id TEXT PRIMARY KEY)")
+    client = chromadb.PersistentClient(path=str(index_path))
+    client.get_or_create_collection("partner_knowledge")
     retriever = PersistentChromaRetriever(index_path)
 
     retriever.ensure_available()
 
 
-def test_persistent_chroma_retriever_rejects_an_invalid_sqlite_database(
+def test_persistent_chroma_retriever_rejects_an_invalid_chroma_database(
     tmp_path: Path,
 ):
     index_path = tmp_path / "index"
