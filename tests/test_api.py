@@ -6,16 +6,45 @@ because it is the sole component that calls an external service. Security,
 cache, and metrics run for real.
 """
 
+import chromadb
 import pytest
+from fastapi.concurrency import run_in_threadpool
 from httpx import AsyncClient
 
 from src.cache import CachedChatResponse, ResponseCache
+from src.main import app, get_partner_knowledge_retriever
 from src.monitoring import MetricsCollector
 from src.partner_knowledge.constants import SCOPE_REFUSAL
-from src.partner_knowledge.retrieval import RetrievedEvidence
+from src.partner_knowledge.retrieval import PersistentChromaRetriever, RetrievedEvidence
 from tests.conftest import DEFAULT_AGENT_RESPONSE, RATE_LIMIT_PER_MINUTE, FakeAgent
 
 CHAT_URL = "/chat"
+
+
+def _create_weak_match_retriever(tmp_path) -> PersistentChromaRetriever:
+    index_path = tmp_path / "partner-index"
+    chroma_client = chromadb.PersistentClient(path=str(index_path))
+    collection = chroma_client.get_or_create_collection(
+        "partner_knowledge", metadata={"hnsw:space": "cosine"}
+    )
+    collection.add(
+        ids=["weak-match"],
+        documents=["Regra sobre um assunto não relacionado."],
+        metadatas=[
+            {
+                "document_name": "Guia de Atendimento ao Cliente",
+                "location": "Seção: Recepção",
+                "technical_location": "section:1",
+            }
+        ],
+        embeddings=[[0.0, 1.0]],
+    )
+    return PersistentChromaRetriever(
+        index_path,
+        embed_query=lambda _: [1.0, 0.0],
+        candidate_limit=1,
+        relevance_threshold=0.75,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -301,18 +330,49 @@ async def test_chat_does_not_cache_an_agent_exhaustion_message(
 
 
 @pytest.mark.asyncio
-async def test_chat_refuses_a_question_without_supported_evidence(
-    client: AsyncClient, agent: FakeAgent, partner_knowledge_retriever
+@pytest.mark.parametrize(
+    ("message", "case"),
+    [
+        ("Qual é a capital da França?", "non-business"),
+        ("Qual é a política para entregas por drone?", "unsupported-business"),
+    ],
+)
+async def test_chat_refuses_questions_without_supported_evidence(
+    client: AsyncClient,
+    agent: FakeAgent,
+    partner_knowledge_retriever,
+    message: str,
+    case: str,
 ):
+    """All retrieval misses share the public grounded-answer refusal contract."""
     partner_knowledge_retriever.evidence = []
 
-    response = await client.post(
-        CHAT_URL, json={"message": "Qual é a capital da França?"}
-    )
+    response = await client.post(CHAT_URL, json={"message": message})
 
     assert response.status_code == 200
-    assert response.json()["model_used"] == "grounding_refusal"
-    assert response.json()["sources"] == []
+    body = response.json()
+    assert body["response"] == SCOPE_REFUSAL, case
+    assert body["model_used"] == "grounding_refusal", case
+    assert body["sources"] == [], case
+    assert agent.calls == []
+
+
+@pytest.mark.asyncio
+async def test_chat_refuses_a_weak_retrieval_result(
+    client: AsyncClient, agent: FakeAgent, tmp_path
+):
+    """A nearby but below-threshold source must not reach the answer model."""
+    retriever = await run_in_threadpool(_create_weak_match_retriever, tmp_path)
+    app.dependency_overrides[get_partner_knowledge_retriever] = lambda: retriever
+
+    response = await client.post(
+        CHAT_URL, json={"message": "O que diz a regra semelhante sobre reembolsos?"}
+    )
+
+    body = response.json()
+    assert body["response"] == SCOPE_REFUSAL
+    assert body["model_used"] == "grounding_refusal"
+    assert body["sources"] == []
     assert agent.calls == []
 
 
