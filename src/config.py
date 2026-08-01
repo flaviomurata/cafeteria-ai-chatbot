@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     langchain_project: str = "production-api"
 
     app_env: str = "development"
+    e2e_mode: str = "live"
     log_level: str = "INFO"
     rate_limit: str = "20/minute"
     cache_ttl_seconds: int = 300

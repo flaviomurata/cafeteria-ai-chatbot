@@ -73,7 +73,6 @@ async def lifespan(app: FastAPI):
     from fastapi.concurrency import run_in_threadpool
 
     settings = get_settings()
-    partner_knowledge_settings = get_partner_knowledge_settings()
 
     logger.info(
         "Starting production API...",
@@ -89,14 +88,26 @@ async def lifespan(app: FastAPI):
     app.state.security = SecurityPipeline()
     app.state.cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
     app.state.metrics = MetricsCollector()
-    app.state.partner_knowledge_retriever = PersistentChromaRetriever(
-        partner_knowledge_settings.partner_index_path,
-        candidate_limit=partner_knowledge_settings.retrieval_candidate_limit,
-        relevance_threshold=partner_knowledge_settings.relevance_threshold,
-    )
-    await run_in_threadpool(app.state.partner_knowledge_retriever.ensure_available)
-    app.state.agent = ProductionAgent()
-    app.state.evidence_verifier = ProductionEvidenceVerifier()
+    if settings.e2e_mode == "local":
+        from src.e2e import (
+            LocalAgent,
+            LocalEvidenceVerifier,
+            LocalPartnerKnowledgeRetriever,
+        )
+
+        app.state.partner_knowledge_retriever = LocalPartnerKnowledgeRetriever()
+        app.state.agent = LocalAgent()
+        app.state.evidence_verifier = LocalEvidenceVerifier()
+    else:
+        partner_knowledge_settings = get_partner_knowledge_settings()
+        app.state.partner_knowledge_retriever = PersistentChromaRetriever(
+            partner_knowledge_settings.partner_index_path,
+            candidate_limit=partner_knowledge_settings.retrieval_candidate_limit,
+            relevance_threshold=partner_knowledge_settings.relevance_threshold,
+        )
+        await run_in_threadpool(app.state.partner_knowledge_retriever.ensure_available)
+        app.state.agent = ProductionAgent()
+        app.state.evidence_verifier = ProductionEvidenceVerifier()
 
     logger.info("All components initialized. Ready to serve requests.")
 
