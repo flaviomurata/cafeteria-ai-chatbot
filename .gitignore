@@ -224,6 +224,7 @@ data/partner-knowledge-index/
 AGENTS.md
 CLAUDE.md
 docs/agents/
+docs/adr
 .scratch/
 CONTEXT.md
 
