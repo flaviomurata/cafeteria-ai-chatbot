@@ -37,6 +37,7 @@ from src.partner_knowledge.verification import (
     claim_links_are_valid,
     numbered_evidence,
 )
+from src.provider_errors import ProviderRateLimitError
 from src.security import SecurityPipeline
 
 load_dotenv()
@@ -104,6 +105,10 @@ async def lifespan(app: FastAPI):
             partner_knowledge_settings.partner_index_path,
             candidate_limit=partner_knowledge_settings.retrieval_candidate_limit,
             relevance_threshold=partner_knowledge_settings.relevance_threshold,
+            embedding_model=partner_knowledge_settings.embedding_model,
+            query_embedding_cache_size=(
+                partner_knowledge_settings.query_embedding_cache_size
+            ),
         )
         await run_in_threadpool(app.state.partner_knowledge_retriever.ensure_available)
         app.state.agent = ProductionAgent()
@@ -232,9 +237,13 @@ async def chat(
             }
 
         # ---- Step 3: Retrieve Partner knowledge, then invoke the agent ----
-        evidence = await run_in_threadpool(
-            partner_knowledge_retriever.retrieve, cleaned_message
-        )
+        try:
+            evidence = await run_in_threadpool(
+                partner_knowledge_retriever.retrieve, cleaned_message
+            )
+        except ProviderRateLimitError as exc:
+            metrics.record_request(latency_ms=0, error=True)
+            raise _provider_unavailable_exception(exc) from exc
         if not evidence:
             return _scope_refusal(body.thread_id, security_notes, metrics)
         selected_evidence = evidence[:3]
@@ -243,6 +252,17 @@ async def chat(
             result = await run_in_threadpool(
                 agent.invoke, cleaned_message, selected_evidence
             )
+        except ProviderRateLimitError as exc:
+            logger.error(
+                "Agent provider rate limit exceeded",
+                extra={
+                    "extra_data": {
+                        "thread_id": body.thread_id,
+                    }
+                },
+            )
+            metrics.record_request(latency_ms=0, error=True)
+            raise _provider_unavailable_exception(exc) from exc
         except (ConnectionError, RuntimeError, TimeoutError) as exc:
             logger.error(
                 "Agent invocation failed",
@@ -351,6 +371,17 @@ async def chat(
         "sources": sources,
         "security_notes": security_notes,
     }
+
+
+def _provider_unavailable_exception(exc: ProviderRateLimitError) -> HTTPException:
+    headers = {}
+    if exc.retry_after_seconds is not None:
+        headers["Retry-After"] = str(exc.retry_after_seconds)
+    return HTTPException(
+        status_code=503,
+        detail="The grounded answer service is temporarily unavailable.",
+        headers=headers or None,
+    )
 
 
 def _build_sources(evidence: list[RetrievedEvidence]) -> list[SourceCitation]:

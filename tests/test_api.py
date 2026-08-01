@@ -18,6 +18,7 @@ from src.partner_knowledge.constants import SCOPE_REFUSAL
 from src.partner_knowledge.grounding import DOCUMENT_CONFLICT_RESPONSE
 from src.partner_knowledge.retrieval import PersistentChromaRetriever, RetrievedEvidence
 from src.partner_knowledge.verification import VerificationResult
+from src.provider_errors import ProviderRateLimitError
 from tests.conftest import DEFAULT_AGENT_RESPONSE, RATE_LIMIT_PER_MINUTE, FakeAgent
 
 CHAT_URL = "/chat"
@@ -784,6 +785,41 @@ async def test_agent_failure_does_not_leak_internal_details(
 
     assert "sk-abc123" not in resp.text
     assert "gemini" not in resp.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_503_and_retry_guidance_when_agent_quota_is_exhausted(
+    client: AsyncClient, agent: FakeAgent
+):
+    agent.raises = ProviderRateLimitError("Gemini", retry_after_seconds=17)
+
+    resp = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
+
+    assert resp.status_code == 503
+    assert resp.json() == {
+        "detail": "The grounded answer service is temporarily unavailable."
+    }
+    assert resp.headers["retry-after"] == "17"
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_503_and_retry_guidance_when_embedding_quota_is_exhausted(
+    client: AsyncClient,
+    partner_knowledge_retriever,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def retrieve(_query: str):
+        raise ProviderRateLimitError("Google embeddings", retry_after_seconds=11)
+
+    monkeypatch.setattr(partner_knowledge_retriever, "retrieve", retrieve)
+
+    resp = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
+
+    assert resp.status_code == 503
+    assert resp.json() == {
+        "detail": "The grounded answer service is temporarily unavailable."
+    }
+    assert resp.headers["retry-after"] == "11"
 
 
 @pytest.mark.asyncio

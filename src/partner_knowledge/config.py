@@ -16,7 +16,8 @@ class PartnerKnowledgeSettings(BaseSettings):
 
     partner_document_source: Path = Path("media/cafeteria-documents")
     partner_index_path: Path = Path("data/partner-knowledge-index")
-    embedding_model: str = "gemini-embedding-2"
+    embedding_model: str = "gemini-embedding-001"
+    query_embedding_cache_size: int = Field(default=128, ge=0)
     retrieval_candidate_limit: int = Field(default=8, ge=1)
     relevance_threshold: float = Field(default=0.75, ge=0, le=1)
     evidence_verifier_model: str = "gemini-3.6-flash"

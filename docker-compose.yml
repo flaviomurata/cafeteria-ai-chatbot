@@ -1,6 +1,18 @@
 # @format
 
 services:
+  ingest-partner-knowledge:
+    build: .
+    env_file:
+      - .env
+    command:
+      - /src/.venv/bin/python
+      - -m
+      - src.partner_knowledge.ingestion
+    volumes:
+      - ./media/cafeteria-documents:/src/media/cafeteria-documents:ro
+      - partner-knowledge-index:/src/data/partner-knowledge-index
+
   agent-api:
     build: .
     ports:
@@ -20,5 +32,10 @@ services:
       timeout: 10s
       start_period: 30s
       retries: 3
+    volumes:
+      - partner-knowledge-index:/src/data/partner-knowledge-index
     restart: unless-stopped
     stop_grace_period: 15s
+
+volumes:
+  partner-knowledge-index:

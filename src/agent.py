@@ -12,8 +12,13 @@ from src.partner_knowledge.constants import SCOPE_REFUSAL
 from src.partner_knowledge.retrieval import RetrievedEvidence
 from src.partner_knowledge.verification import (
     GeneratedGroundedAnswer,
-    _message_text,
+    json_response_text,
     numbered_evidence,
+)
+from src.provider_errors import (
+    ProviderRateLimitError,
+    is_provider_rate_limit_error,
+    provider_rate_limit_error,
 )
 
 GROUNDED_ANSWER_RULES = f"""You answer Partners using only the supplied
@@ -36,6 +41,8 @@ class AgentState(TypedDict):
     error: Optional[str]
     retry_count: int
     model_used: str
+    provider_rate_limited: bool
+    retry_after_seconds: int | None
 
 
 class ProductionAgent:
@@ -70,6 +77,18 @@ class ProductionAgent:
                     "model_used": "primary",
                 }
             except Exception as e:
+                if is_provider_rate_limit_error(e):
+                    rate_limit_error = (
+                        e
+                        if isinstance(e, ProviderRateLimitError)
+                        else provider_rate_limit_error("Gemini", e)
+                    )
+                    return {
+                        "error": str(rate_limit_error),
+                        "model_used": "",
+                        "provider_rate_limited": True,
+                        "retry_after_seconds": rate_limit_error.retry_after_seconds,
+                    }
                 return {
                     "error": str(e),
                     "retry_count": state["retry_count"] + 1,
@@ -85,6 +104,18 @@ class ProductionAgent:
                     "model_used": "fallback",
                 }
             except Exception as e:
+                if is_provider_rate_limit_error(e):
+                    rate_limit_error = (
+                        e
+                        if isinstance(e, ProviderRateLimitError)
+                        else provider_rate_limit_error("Gemini", e)
+                    )
+                    return {
+                        "error": "The answer provider is temporarily rate limited.",
+                        "model_used": "",
+                        "provider_rate_limited": True,
+                        "retry_after_seconds": rate_limit_error.retry_after_seconds,
+                    }
                 return {
                     "error": str(e),
                     "model_used": "",
@@ -104,6 +135,8 @@ class ProductionAgent:
             }
 
         def route_after_process(state: AgentState) -> str:
+            if state.get("provider_rate_limited"):
+                return "error"
             if state.get("error") is None:
                 return "done"
             elif state["retry_count"] < self.max_retries:
@@ -161,10 +194,18 @@ class ProductionAgent:
                 "error": None,
                 "retry_count": 0,
                 "model_used": "",
+                "provider_rate_limited": False,
+                "retry_after_seconds": None,
             }
         )
 
-        response = _message_text(result["messages"][-1].content)
+        if result.get("provider_rate_limited"):
+            raise ProviderRateLimitError(
+                "Gemini",
+                retry_after_seconds=result.get("retry_after_seconds"),
+            )
+
+        response = json_response_text(result["messages"][-1].content)
         try:
             generated_answer = GeneratedGroundedAnswer.model_validate_json(response)
         except ValueError:

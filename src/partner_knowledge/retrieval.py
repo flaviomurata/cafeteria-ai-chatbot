@@ -6,6 +6,12 @@ from typing import Protocol, runtime_checkable
 import chromadb
 from chromadb.errors import ChromaError
 
+from src.cache import QueryEmbeddingCache
+from src.provider_errors import (
+    is_provider_rate_limit_error,
+    provider_rate_limit_error,
+)
+
 
 class PartnerKnowledgeIndexUnavailableError(RuntimeError):
     """Raised when the required persistent Partner knowledge index is unusable."""
@@ -50,11 +56,19 @@ class PersistentChromaRetriever:
         embed_query: Callable[[str], list[float]] | None = None,
         candidate_limit: int = 8,
         relevance_threshold: float = 0.75,
+        embedding_model: str = "gemini-embedding-001",
+        query_embedding_cache_size: int = 128,
+        query_embedding_cache_path: Path | None = None,
     ):
         self._index_path = index_path
         self._embed_query = embed_query
         self._candidate_limit = candidate_limit
         self._relevance_threshold = relevance_threshold
+        self._embedding_model = embedding_model
+        self._query_embedding_cache = QueryEmbeddingCache(
+            query_embedding_cache_path or index_path / ".query-embedding-cache.sqlite3",
+            max_entries=query_embedding_cache_size,
+        )
 
     def ensure_available(self) -> None:
         if not self._index_path.exists():
@@ -96,7 +110,7 @@ class PersistentChromaRetriever:
             client = chromadb.PersistentClient(path=str(self._index_path))
             collection = client.get_collection(self._COLLECTION_NAME)
             results = collection.query(
-                query_embeddings=[self._get_embed_query()(query)],
+                query_embeddings=[self._get_query_embedding(query)],
                 n_results=self._candidate_limit,
                 include=["documents", "metadatas", "distances"],
             )
@@ -125,6 +139,25 @@ class PersistentChromaRetriever:
                     )
                 )
         return evidence
+
+    def _get_query_embedding(self, query: str) -> list[float]:
+        normalized_query = query.lower().strip()
+        cached_embedding = self._query_embedding_cache.get(
+            self._embedding_model, normalized_query
+        )
+        if cached_embedding is not None:
+            return cached_embedding
+
+        try:
+            embedding = self._get_embed_query()(normalized_query)
+        except Exception as exc:
+            if is_provider_rate_limit_error(exc):
+                raise provider_rate_limit_error("Google embeddings", exc) from exc
+            raise
+        self._query_embedding_cache.set(
+            self._embedding_model, normalized_query, embedding
+        )
+        return embedding
 
     def _get_embed_query(self) -> Callable[[str], list[float]]:
         if self._embed_query is None:

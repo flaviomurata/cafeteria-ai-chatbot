@@ -118,7 +118,7 @@ class ProductionEvidenceVerifier:
         )
         try:
             return VerificationResult.model_validate_json(
-                _message_text(response.content)
+                json_response_text(response.content)
             )
         except ValidationError as exc:
             raise ValueError("Evidence verifier returned an invalid result") from exc
@@ -149,3 +149,21 @@ def _message_text(content: str | list) -> str:
         for block in content
         if isinstance(block, (str, dict))
     )
+
+
+def json_response_text(content: str | list) -> str:
+    """Return model output as JSON text, removing one optional Markdown fence."""
+    text = _message_text(content).strip()
+    lines = text.splitlines()
+    if len(lines) < 3 or lines[-1].strip() != "```":
+        return text
+
+    opening = lines[0].strip()
+    if not opening.startswith("```"):
+        return text
+
+    language = opening[3:].strip().lower()
+    if language not in {"", "json"}:
+        return text
+
+    return "\n".join(lines[1:-1]).strip()

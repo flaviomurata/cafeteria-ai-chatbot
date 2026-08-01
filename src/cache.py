@@ -1,6 +1,10 @@
 import hashlib
+import json
+import sqlite3
+import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from src.models import SourceCitation
 
@@ -57,6 +61,93 @@ class ResponseCache:
             "hit_rate": f"{hit_rate:.1%}",
             "cached_entries": len(self._cache),
         }
+
+
+class QueryEmbeddingCache:
+    """Small persistent cache for expensive query-embedding calls."""
+
+    def __init__(self, path: Path, *, max_entries: int = 128):
+        self._path = path
+        self._max_entries = max_entries
+        self._lock = threading.Lock()
+
+    def get(self, model: str, query: str) -> list[float] | None:
+        if self._max_entries == 0:
+            return None
+        with self._lock:
+            try:
+                with self._connect() as database:
+                    row = database.execute(
+                        """
+                        SELECT embedding
+                        FROM query_embeddings
+                        WHERE model = ? AND query = ?
+                        """,
+                        (model, query),
+                    ).fetchone()
+                    if row is None:
+                        return None
+                    database.execute(
+                        """
+                        UPDATE query_embeddings
+                        SET last_used_at = ?
+                        WHERE model = ? AND query = ?
+                        """,
+                        (time.time(), model, query),
+                    )
+                    return json.loads(row[0])
+            except (OSError, sqlite3.Error, TypeError, ValueError):
+                return None
+
+    def set(self, model: str, query: str, embedding: list[float]) -> None:
+        if self._max_entries == 0:
+            return
+        with self._lock:
+            try:
+                with self._connect() as database:
+                    database.execute(
+                        """
+                        INSERT INTO query_embeddings (
+                            model, query, embedding, last_used_at
+                        )
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(model, query) DO UPDATE SET
+                            embedding = excluded.embedding,
+                            last_used_at = excluded.last_used_at
+                        """,
+                        (model, query, json.dumps(embedding), time.time()),
+                    )
+                    database.execute(
+                        """
+                        DELETE FROM query_embeddings
+                        WHERE rowid IN (
+                            SELECT rowid
+                            FROM query_embeddings
+                            ORDER BY last_used_at DESC
+                            LIMIT -1 OFFSET ?
+                        )
+                        """,
+                        (self._max_entries,),
+                    )
+            except (OSError, sqlite3.Error, TypeError, ValueError):
+                # A cache must never take down retrieval.
+                return
+
+    def _connect(self) -> sqlite3.Connection:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        database = sqlite3.connect(self._path)
+        database.execute(
+            """
+            CREATE TABLE IF NOT EXISTS query_embeddings (
+                model TEXT NOT NULL,
+                query TEXT NOT NULL,
+                embedding TEXT NOT NULL,
+                last_used_at REAL NOT NULL,
+                PRIMARY KEY (model, query)
+            )
+            """
+        )
+        return database
 
 
 # uv run python -c "

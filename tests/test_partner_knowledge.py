@@ -43,6 +43,18 @@ def test_partner_knowledge_settings_use_a_domain_environment_prefix(
     assert settings.embedding_model == "test-embedding-model"
 
 
+def test_partner_knowledge_settings_default_to_free_text_embeddings(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.delenv("PARTNER_KNOWLEDGE_EMBEDDING_MODEL", raising=False)
+    monkeypatch.delenv("PARTNER_KNOWLEDGE_QUERY_EMBEDDING_CACHE_SIZE", raising=False)
+
+    settings = PartnerKnowledgeSettings(_env_file=None)
+
+    assert settings.embedding_model == "gemini-embedding-001"
+    assert settings.query_embedding_cache_size == 128
+
+
 def test_persistent_chroma_retriever_rejects_a_missing_index(tmp_path: Path):
     retriever = PersistentChromaRetriever(tmp_path / "missing-index")
 
@@ -127,6 +139,46 @@ def test_persistent_chroma_retriever_returns_only_relevant_citation_ready_eviden
     assert evidence[0].location == "Página 2"
     assert evidence[0].technical_location == "page:2"
     assert evidence[0].relevance_score == 1.0
+
+
+def test_persistent_chroma_retriever_caches_normalized_query_embeddings(
+    tmp_path: Path,
+):
+    index_path = tmp_path / "index"
+    collection = chromadb.PersistentClient(
+        path=str(index_path)
+    ).get_or_create_collection("partner_knowledge", metadata={"hnsw:space": "cosine"})
+    collection.add(
+        ids=["catalog-1"],
+        documents=["Café coado usa grãos Arábica."],
+        metadatas=[
+            {
+                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "location": "Página 2",
+                "technical_location": "page:2",
+            }
+        ],
+        embeddings=[[1.0, 0.0]],
+    )
+    calls: list[str] = []
+
+    def embed_query(query: str) -> list[float]:
+        calls.append(query)
+        return [1.0, 0.0]
+
+    retriever = PersistentChromaRetriever(
+        index_path,
+        embed_query=embed_query,
+        candidate_limit=1,
+        relevance_threshold=0.75,
+        embedding_model="test-embedding-model",
+        query_embedding_cache_size=2,
+    )
+
+    assert retriever.retrieve("What is the special?")
+    assert retriever.retrieve("  WHAT IS THE SPECIAL?  ")
+
+    assert len(calls) == 1
 
 
 def test_persistent_chroma_retriever_rejects_an_invalid_chroma_database(
