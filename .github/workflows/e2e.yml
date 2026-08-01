@@ -1,0 +1,62 @@
+name: Compose E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Run Compose E2E tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.13"
+
+      - name: Install test dependencies
+        run: uv sync --all-groups
+
+      - name: Create E2E environment file
+        run: cp .env.example .env
+
+      - name: Start E2E API stack
+        run: >-
+          docker compose
+          -f docker-compose.yml
+          -f docker-compose.e2e.yml
+          up --build --detach --wait agent-api
+
+      - name: Run E2E tests
+        env:
+          E2E_BASE_URL: http://127.0.0.1:8000
+          E2E_EXPECTED_ENVIRONMENT: e2e
+          RUN_E2E: "1"
+        run: uv run pytest tests/e2e -q
+
+      - name: Show API logs on failure
+        if: ${{ failure() }}
+        run: >-
+          docker compose
+          -f docker-compose.yml
+          -f docker-compose.e2e.yml
+          logs --no-color agent-api
+
+      - name: Tear down E2E API stack
+        if: ${{ always() }}
+        run: >-
+          docker compose
+          -f docker-compose.yml
+          -f docker-compose.e2e.yml
+          down --volumes --remove-orphans
