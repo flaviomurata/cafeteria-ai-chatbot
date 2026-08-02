@@ -17,7 +17,10 @@ from src.cache import CachedChatResponse, ResponseCache
 from src.main import app, get_partner_knowledge_retriever
 from src.monitoring import MetricsCollector
 from src.partner_knowledge.cohere_embeddings import CohereEmbeddingError
-from src.partner_knowledge.constants import SCOPE_REFUSAL
+from src.partner_knowledge.constants import (
+    GROUNDING_SERVICE_UNAVAILABLE,
+    SCOPE_REFUSAL,
+)
 from src.partner_knowledge.grounding import DOCUMENT_CONFLICT_RESPONSE
 from src.partner_knowledge.retrieval import (
     PartnerKnowledgeIndexUnavailableError,
@@ -69,7 +72,7 @@ def _create_calibrated_threshold_retriever(tmp_path) -> PersistentChromaRetrieve
         documents=["O latte pode ser preparado com bebida vegetal de aveia."],
         metadatas=[
             {
-                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
                 "location": "Página 18",
                 "technical_location": "page:18",
             }
@@ -108,7 +111,7 @@ def _create_representative_question_retriever(
         ],
         metadatas=[
             {
-                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
                 "location": "Página 1",
                 "technical_location": "page:1",
             },
@@ -212,7 +215,7 @@ def _create_expenses_retriever(tmp_path) -> PersistentChromaRetriever:
 
 
 # --------------------------------------------------------------------------- #
-# POST /chat — happy path                                                     #
+# POST /chat - happy path                                                     #
 # --------------------------------------------------------------------------- #
 
 
@@ -236,7 +239,7 @@ async def test_chat_answers_a_supported_question_at_the_cohere_threshold(
     assert body["response"] == agent.response
     assert body["sources"] == [
         {
-            "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+            "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
             "location": "Página 18",
         }
     ]
@@ -271,14 +274,14 @@ async def test_chat_refuses_an_unsupported_question_at_the_cohere_threshold(
             "Qual é o horário de funcionamento da unidade Centro aos sábados?",
             '{"nome":"Centro","horarios":{"sabado":{"abre":"07:00","fecha":"20:00"}}}',
             "Configuração das Unidades",
-            "Unidade CA-CPS-01 — Centro",
+            "Unidade CA-CPS-01 - Centro",
             0.3543,
         ),
         (
             "A unidade Centro oferece delivery?",
             '{"nome":"Centro","servicos":{"delivery":false}}',
             "Configuração das Unidades",
-            "Unidade CA-CPS-01 — Centro",
+            "Unidade CA-CPS-01 - Centro",
             0.3149,
         ),
         (
@@ -290,7 +293,7 @@ async def test_chat_refuses_an_unsupported_question_at_the_cohere_threshold(
                 "Status: CRÍTICO"
             ),
             "Controle de Estoque",
-            "Unidade CA-CPS-02, item ING-018 — Frango desfiado",
+            "Unidade CA-CPS-02, item ING-018 - Frango desfiado",
             0.4448,
         ),
         (
@@ -401,7 +404,7 @@ async def test_chat_refuses_a_lexically_similar_unsupported_structured_question(
         tmp_path,
         relevant_text='{"nome":"Centro","servicos":{"delivery":false}}',
         document_name="Configuração das Unidades",
-        location="Unidade CA-CPS-01 — Centro",
+        location="Unidade CA-CPS-01 - Centro",
         semantic_score=0.40,
     )
     app.dependency_overrides[get_partner_knowledge_retriever] = lambda: retriever
@@ -444,7 +447,7 @@ async def test_chat_returns_grounded_answer_with_public_source_citations(
     partner_knowledge_retriever.evidence = [
         RetrievedEvidence(
             text="O café coado utiliza grãos Arábica.",
-            document_name="Catálogo de Produtos e Ingredientes — Café Aurora",
+            document_name="Catálogo de Produtos e Ingredientes - Café Aurora",
             location="Página 2",
             technical_location="page:2",
             relevance_score=0.97,
@@ -461,7 +464,7 @@ async def test_chat_returns_grounded_answer_with_public_source_citations(
     assert body["response"] == "O café coado utiliza grãos Arábica."
     assert body["sources"] == [
         {
-            "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+            "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
             "location": "Página 2",
         }
     ]
@@ -500,7 +503,7 @@ async def test_chat_sends_the_sanitized_message_to_the_agent(
 
 
 # --------------------------------------------------------------------------- #
-# POST /chat — caching                                                        #
+# POST /chat - caching                                                        #
 # --------------------------------------------------------------------------- #
 
 
@@ -623,7 +626,7 @@ async def test_chat_serves_a_verified_answer_and_its_sources_without_reverificat
     partner_knowledge_retriever.evidence = [
         RetrievedEvidence(
             text="O café coado utiliza grãos Arábica.",
-            document_name="Catálogo de Produtos e Ingredientes — Café Aurora",
+            document_name="Catálogo de Produtos e Ingredientes - Café Aurora",
             location="Página 2",
             technical_location="page:2",
             relevance_score=0.98,
@@ -642,7 +645,7 @@ async def test_chat_serves_a_verified_answer_and_its_sources_without_reverificat
     assert first.json()["cached"] is False
     assert first.json()["sources"] == [
         {
-            "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+            "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
             "location": "Página 2",
         }
     ]
@@ -661,7 +664,7 @@ async def test_chat_returns_deduplicated_multi_source_citations(
         RetrievedEvidence(
             text="A unidade CA-01 abre às 7h.",
             document_name="Configuração das Unidades",
-            location="Unidade CA-01 — Centro",
+            location="Unidade CA-01 - Centro",
             technical_location="json:unidades[0]",
             relevance_score=0.98,
         ),
@@ -675,6 +678,13 @@ async def test_chat_returns_deduplicated_multi_source_citations(
     ]
 
     agent.response = "A CA-01 abre às 7h e o atendimento começa com saudação cordial."
+    agent.claims = [
+        {"text": "A CA-01 abre às 7h.", "evidence_ids": ["evidence-1"]},
+        {
+            "text": "O atendimento começa com saudação cordial.",
+            "evidence_ids": ["evidence-2"],
+        },
+    ]
 
     response = await client.post(
         CHAT_URL, json={"message": "Como funciona a abertura da CA-01?"}
@@ -683,7 +693,7 @@ async def test_chat_returns_deduplicated_multi_source_citations(
     assert response.json()["sources"] == [
         {
             "document_name": "Configuração das Unidades",
-            "location": "Unidade CA-01 — Centro",
+            "location": "Unidade CA-01 - Centro",
         },
         {
             "document_name": "Guia de Atendimento ao Cliente",
@@ -703,7 +713,7 @@ async def test_chat_returns_a_verified_grounded_answer_with_public_sources_only(
     partner_knowledge_retriever.evidence = [
         RetrievedEvidence(
             text="O café coado utiliza grãos Arábica.",
-            document_name="Catálogo de Produtos e Ingredientes — Café Aurora",
+            document_name="Catálogo de Produtos e Ingredientes - Café Aurora",
             location="Página 2",
             technical_location="page:2",
             relevance_score=0.98,
@@ -722,7 +732,7 @@ async def test_chat_returns_a_verified_grounded_answer_with_public_sources_only(
     assert response.json()["response"] == "O café coado utiliza grãos Arábica."
     assert response.json()["sources"] == [
         {
-            "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+            "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
             "location": "Página 2",
         }
     ]
@@ -751,7 +761,7 @@ async def test_chat_discloses_only_verifier_identified_conflicting_sources(
         ),
         RetrievedEvidence(
             text="Aprovação é necessária para despesas acima de R$ 100.",
-            document_name="Manual de Operações das Unidades — Café Aurora",
+            document_name="Manual de Operações das Unidades - Café Aurora",
             location="Página 5",
             technical_location="page:5",
             relevance_score=0.97,
@@ -782,7 +792,7 @@ async def test_chat_discloses_only_verifier_identified_conflicting_sources(
             "location": "Seção: Aprovações",
         },
         {
-            "document_name": "Manual de Operações das Unidades — Café Aurora",
+            "document_name": "Manual de Operações das Unidades - Café Aurora",
             "location": "Página 5",
         },
     ]
@@ -852,7 +862,7 @@ async def test_chat_does_not_allow_the_model_to_select_a_conflicting_rule(
         ),
         RetrievedEvidence(
             text="Aprovação é necessária para despesas acima de R$ 100.",
-            document_name="Manual de Operações das Unidades — Café Aurora",
+            document_name="Manual de Operações das Unidades - Café Aurora",
             location="Página 5",
             technical_location="page:5",
             relevance_score=0.97,
@@ -869,18 +879,19 @@ async def test_chat_does_not_allow_the_model_to_select_a_conflicting_rule(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("claims", "verifier_result", "verifier_error"),
+    ("claims", "verifier_result", "verifier_error", "expected_status"),
     [
         (
             [{"text": "Regra", "evidence_ids": ["evidence-99"]}],
             None,
             None,
+            200,
         ),
-        ([], None, None),
-        ("malformed claims", None, None),
-        (None, VerificationResult(verdict="rejected"), None),
-        (None, None, TimeoutError("verification timed out")),
-        (None, None, RuntimeError("verifier unavailable")),
+        ([], None, None, 200),
+        ("malformed claims", None, None, 503),
+        (None, VerificationResult(verdict="rejected"), None, 200),
+        (None, None, TimeoutError("verification timed out"), 503),
+        (None, None, RuntimeError("verifier unavailable"), 503),
     ],
     ids=[
         "unknown-evidence-link",
@@ -891,7 +902,7 @@ async def test_chat_does_not_allow_the_model_to_select_a_conflicting_rule(
         "verifier-failure",
     ],
 )
-async def test_chat_refuses_every_unverifiable_answer_without_citations(
+async def test_chat_rejects_or_unavailable_for_every_unverifiable_answer(
     client: AsyncClient,
     agent: FakeAgent,
     cache: ResponseCache,
@@ -899,6 +910,7 @@ async def test_chat_refuses_every_unverifiable_answer_without_citations(
     claims,
     verifier_result,
     verifier_error,
+    expected_status,
 ):
     agent.claims = claims
     evidence_verifier.result = verifier_result
@@ -906,23 +918,25 @@ async def test_chat_refuses_every_unverifiable_answer_without_citations(
 
     response = await client.post(CHAT_URL, json={"message": "Qual é o prato especial?"})
 
-    assert response.status_code == 200
-    assert response.json()["response"] == SCOPE_REFUSAL
-    assert response.json()["sources"] == []
+    assert response.status_code == expected_status
+    if expected_status == 200:
+        assert response.json()["response"] == SCOPE_REFUSAL
+        assert response.json()["sources"] == []
+    else:
+        assert response.json() == {"detail": GROUNDING_SERVICE_UNAVAILABLE}
     assert cache.get("Qual é o prato especial?") is None
 
 
 @pytest.mark.asyncio
-async def test_chat_refuses_malformed_generation_output_without_citations(
+async def test_chat_returns_503_for_malformed_generation_output(
     client: AsyncClient, agent: FakeAgent, cache: ResponseCache
 ):
     agent.result = {"claims": []}
 
     response = await client.post(CHAT_URL, json={"message": "Qual é o prato especial?"})
 
-    assert response.status_code == 200
-    assert response.json()["response"] == SCOPE_REFUSAL
-    assert response.json()["sources"] == []
+    assert response.status_code == 503
+    assert response.json() == {"detail": GROUNDING_SERVICE_UNAVAILABLE}
     assert cache.get("Qual é o prato especial?") is None
 
 
@@ -1021,7 +1035,7 @@ async def test_chat_refuses_partial_evidence_without_citations_or_caching(
 
 
 # --------------------------------------------------------------------------- #
-# POST /chat — security                                                       #
+# POST /chat - security                                                       #
 # --------------------------------------------------------------------------- #
 
 
@@ -1123,20 +1137,20 @@ async def test_cache_hit_still_reports_input_security_notes(client: AsyncClient)
 
 
 # --------------------------------------------------------------------------- #
-# POST /chat — agent failure                                                  #
+# POST /chat - agent failure                                                  #
 # --------------------------------------------------------------------------- #
 
 
 @pytest.mark.asyncio
-async def test_chat_returns_500_when_the_agent_raises(
+async def test_chat_returns_503_when_the_agent_raises(
     client: AsyncClient, agent: FakeAgent
 ):
     agent.raises = RuntimeError("gemini quota exhausted: key sk-abc123")
 
     resp = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
 
-    assert resp.status_code == 500
-    assert resp.json() == {"detail": "An error occurred while processing your request."}
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": GROUNDING_SERVICE_UNAVAILABLE}
 
 
 @pytest.mark.asyncio
@@ -1160,9 +1174,7 @@ async def test_chat_returns_503_and_retry_guidance_when_agent_quota_is_exhausted
     resp = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
 
     assert resp.status_code == 503
-    assert resp.json() == {
-        "detail": "The grounded answer service is temporarily unavailable."
-    }
+    assert resp.json() == {"detail": GROUNDING_SERVICE_UNAVAILABLE}
     assert resp.headers["retry-after"] == "17"
 
 
@@ -1180,9 +1192,7 @@ async def test_chat_returns_503_and_retry_guidance_when_embedding_quota_is_exhau
     resp = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
 
     assert resp.status_code == 503
-    assert resp.json() == {
-        "detail": "The grounded answer service is temporarily unavailable."
-    }
+    assert resp.json() == {"detail": GROUNDING_SERVICE_UNAVAILABLE}
     assert resp.headers["retry-after"] == "11"
 
 
@@ -1200,9 +1210,7 @@ async def test_chat_returns_503_when_cohere_embedding_service_is_unavailable(
     resp = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
 
     assert resp.status_code == 503
-    assert resp.json() == {
-        "detail": "The grounded answer service is temporarily unavailable."
-    }
+    assert resp.json() == {"detail": GROUNDING_SERVICE_UNAVAILABLE}
     assert "cohere key" not in resp.text
 
 
@@ -1220,9 +1228,7 @@ async def test_chat_returns_503_when_partner_index_storage_is_unavailable(
     resp = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
 
     assert resp.status_code == 503
-    assert resp.json() == {
-        "detail": "The grounded answer service is temporarily unavailable."
-    }
+    assert resp.json() == {"detail": GROUNDING_SERVICE_UNAVAILABLE}
     assert "index path" not in resp.text
 
 
@@ -1247,13 +1253,13 @@ async def test_agent_recovery_is_served_after_a_failure(
     agent.raises = None
     recovered = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
 
-    assert failed.status_code == 500
+    assert failed.status_code == 503
     assert recovered.status_code == 200
     assert recovered.json()["cached"] is False
 
 
 # --------------------------------------------------------------------------- #
-# POST /chat — request validation                                             #
+# POST /chat - request validation                                             #
 # --------------------------------------------------------------------------- #
 
 
@@ -1314,7 +1320,7 @@ async def test_length_limit_applies_after_stripping(client: AsyncClient):
 
 
 # --------------------------------------------------------------------------- #
-# POST /chat — empty after sanitization                                       #
+# POST /chat - empty after sanitization                                       #
 # --------------------------------------------------------------------------- #
 
 

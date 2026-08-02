@@ -6,3 +6,4 @@ services:
       GOOGLE_API_KEY: ""
       LANGCHAIN_API_KEY: ""
       LANGCHAIN_TRACING_V2: "false"
+      RATE_LIMIT: "1000/minute"

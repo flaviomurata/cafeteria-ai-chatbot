@@ -16,7 +16,10 @@ import chromadb
 from chromadb.errors import ChromaError
 
 from src.cache import QueryEmbeddingCache
-from src.partner_knowledge.constants import DEFAULT_RELEVANCE_THRESHOLD
+from src.partner_knowledge.constants import (
+    APPROVED_PARTNER_DOCUMENT_NAMES,
+    DEFAULT_RELEVANCE_THRESHOLD,
+)
 from src.partner_knowledge.index_storage import (
     ACTIVATION_LOCK_NAME,
     INDEX_LOCK_NAME,
@@ -275,6 +278,24 @@ class PersistentChromaRetriever:
                 "Run the Partner knowledge ingestion operation before starting "
                 "the API."
             )
+        if self._embedding_metadata:
+            records = collection.get(include=["metadatas"])
+            document_names = {
+                str(metadata["document_name"])
+                for metadata in records["metadatas"]
+                if metadata and metadata.get("document_name")
+            }
+            has_incomplete_metadata = any(
+                not metadata or not metadata.get("document_name")
+                for metadata in records["metadatas"]
+            )
+            missing_documents = APPROVED_PARTNER_DOCUMENT_NAMES - document_names
+            unexpected_documents = document_names - APPROVED_PARTNER_DOCUMENT_NAMES
+            if has_incomplete_metadata or missing_documents or unexpected_documents:
+                raise PartnerKnowledgeIndexUnavailableError(
+                    "Partner knowledge index contains an unexpected or incomplete "
+                    "approved source document set. Rebuild the immutable index."
+                )
 
     def retrieve(self, query: str) -> list[RetrievedEvidence]:
         self._ensure_embedding_profile()

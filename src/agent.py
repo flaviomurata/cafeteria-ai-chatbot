@@ -175,7 +175,7 @@ class ProductionAgent:
     def invoke(self, message: str, evidence: list[RetrievedEvidence]) -> dict:
         evidence_text = "\n\n".join(
             f"Evidence ID: {evidence_id}\n"
-            f"Source: {item.document_name} — {item.location}\nEvidence: {item.text}"
+            f"Source: {item.document_name} - {item.location}\nEvidence: {item.text}"
             for evidence_id, item in numbered_evidence(evidence)
         )
         result = self.graph.invoke(
@@ -211,6 +211,12 @@ class ProductionAgent:
         except ValueError:
             generated_answer = None
 
+        generation_error = (
+            "malformed_generation"
+            if generated_answer is None and response.strip() != SCOPE_REFUSAL
+            else result.get("error")
+        )
+
         return {
             "response": generated_answer.answer if generated_answer else response,
             "claims": (
@@ -219,5 +225,5 @@ class ProductionAgent:
                 else []
             ),
             "model_used": result.get("model_used", "unknown"),
-            "error": result.get("error"),
+            "error": generation_error,
         }

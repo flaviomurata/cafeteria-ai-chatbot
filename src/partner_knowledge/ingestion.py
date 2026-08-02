@@ -47,8 +47,8 @@ from src.provider_errors import ProviderRateLimitError
 _SOURCE_FINGERPRINT_KEY = "source_fingerprint"
 logger = logging.getLogger(__name__)
 _APPROVED_SOURCES = {
-    "Catálogo de Produtos e Ingredientes — Café Aurora.pdf": (
-        "Catálogo de Produtos e Ingredientes — Café Aurora",
+    "Catálogo de Produtos e Ingredientes - Café Aurora.pdf": (
+        "Catálogo de Produtos e Ingredientes - Café Aurora",
         "pdf",
     ),
     "CA-COM-PLA-001_Controle_de_Estoque.csv": ("Controle de Estoque", "csv"),
@@ -56,8 +56,8 @@ _APPROVED_SOURCES = {
         "Configuração das Unidades",
         "json",
     ),
-    "Manual de Operações das Unidades — Café Aurora.pdf": (
-        "Manual de Operações das Unidades — Café Aurora",
+    "Manual de Operações das Unidades - Café Aurora.pdf": (
+        "Manual de Operações das Unidades - Café Aurora",
         "pdf",
     ),
     "CA-QUA-GUI-001_Guia_de_Atendimento_ao_Cliente.docx": (
@@ -377,7 +377,7 @@ class PartnerKnowledgeIngestor:
                     item = values.get("Código do item", "item não identificado")
                     description = values.get("Descrição", "")
                     location = f"Unidade {unit}, item {item}" + (
-                        f" — {description}" if description else ""
+                        f" - {description}" if description else ""
                     )
                     yield _Chunk(
                         "\n".join(f"{key}: {value}" for key, value in values.items()),
@@ -417,7 +417,7 @@ class PartnerKnowledgeIngestor:
                 unit.get("codigo", "unidade não identificada"),
                 unit.get("nome", ""),
             )
-            location = f"Unidade {unit_code}" + (f" — {unit_name}" if unit_name else "")
+            location = f"Unidade {unit_code}" + (f" - {unit_name}" if unit_name else "")
             yield _Chunk(
                 json.dumps(unit, ensure_ascii=False, indent=2),
                 document_name,

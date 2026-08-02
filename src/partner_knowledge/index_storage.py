@@ -32,9 +32,7 @@ def partner_knowledge_index_lock(
     if lock_directory is not None:
         lock_root.mkdir(parents=True, exist_ok=True)
     try:
-        descriptor = os.open(
-            lock_root / lock_name, os.O_RDWR | os.O_CREAT, 0o600
-        )
+        descriptor = os.open(lock_root / lock_name, os.O_RDWR | os.O_CREAT, 0o600)
     except OSError as exc:
         raise PartnerKnowledgeIndexLockError(
             f"Unable to open the Partner knowledge index lock at {index_path}."

@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from src.main import app
 from src.partner_knowledge.config import PartnerKnowledgeSettings
+from src.partner_knowledge.constants import APPROVED_PARTNER_DOCUMENT_NAMES
 from src.partner_knowledge.index_storage import active_collection_name
 from src.partner_knowledge.retrieval import (
     PartnerKnowledgeIndexUnavailableError,
@@ -229,6 +230,91 @@ def test_lazy_retriever_rejects_a_legacy_embedding_index(tmp_path: Path):
         PersistentChromaRetriever(index_path).ensure_available()
 
 
+def test_persistent_chroma_retriever_rejects_deleted_or_unapproved_source_metadata(
+    tmp_path: Path,
+):
+    index_path = tmp_path / "index"
+    collection = chromadb.PersistentClient(
+        path=str(index_path)
+    ).get_or_create_collection(
+        "partner_knowledge",
+        metadata={
+            "hnsw:space": "cosine",
+            "embedding_provider": "cohere",
+            "embedding_model": "embed-v4.0",
+            "embedding_dimension": "1024",
+        },
+    )
+    collection.add(
+        ids=["deleted-source-1"],
+        documents=["Internal HR guidance must not be served."],
+        metadatas=[
+            {
+                "document_name": "Política de Recursos Humanos",
+                "location": "Página 1",
+                "technical_location": "page:1",
+            }
+        ],
+        embeddings=[[0.1, 0.2, 0.3]],
+    )
+    retriever = PersistentChromaRetriever(
+        index_path,
+        embed_query=lambda _query: [0.1, 0.2, 0.3],
+        embedding_metadata={
+            "embedding_provider": "cohere",
+            "embedding_model": "embed-v4.0",
+            "embedding_dimension": "1024",
+        },
+    )
+
+    with pytest.raises(
+        PartnerKnowledgeIndexUnavailableError, match="unexpected or incomplete"
+    ):
+        retriever.ensure_available()
+
+
+def test_persistent_chroma_retriever_accepts_the_approved_source_document_set(
+    tmp_path: Path,
+):
+    index_path = tmp_path / "index"
+    collection = chromadb.PersistentClient(
+        path=str(index_path)
+    ).get_or_create_collection(
+        "partner_knowledge",
+        metadata={
+            "hnsw:space": "cosine",
+            "embedding_provider": "cohere",
+            "embedding_model": "embed-v4.0",
+            "embedding_dimension": "3",
+        },
+    )
+    document_names = sorted(APPROVED_PARTNER_DOCUMENT_NAMES)
+    collection.add(
+        ids=[f"approved-{index}" for index in range(len(document_names))],
+        documents=[f"Approved content {index}" for index in range(len(document_names))],
+        metadatas=[
+            {
+                "document_name": document_name,
+                "location": "Fixture",
+                "technical_location": f"fixture:{index}",
+            }
+            for index, document_name in enumerate(document_names)
+        ],
+        embeddings=[[0.1, 0.2, 0.3] for _ in document_names],
+    )
+    retriever = PersistentChromaRetriever(
+        index_path,
+        embed_query=lambda _query: [0.1, 0.2, 0.3],
+        embedding_metadata={
+            "embedding_provider": "cohere",
+            "embedding_model": "embed-v4.0",
+            "embedding_dimension": "3",
+        },
+    )
+
+    retriever.ensure_available()
+
+
 def test_persistent_chroma_retriever_returns_only_relevant_citation_ready_evidence(
     tmp_path: Path,
 ):
@@ -241,12 +327,12 @@ def test_persistent_chroma_retriever_returns_only_relevant_citation_ready_eviden
         documents=["Café coado usa grãos Arábica.", "Regra não relacionada."],
         metadatas=[
             {
-                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
                 "location": "Página 2",
                 "technical_location": "page:2",
             },
             {
-                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
                 "location": "Página 3",
                 "technical_location": "page:3",
             },
@@ -264,7 +350,7 @@ def test_persistent_chroma_retriever_returns_only_relevant_citation_ready_eviden
 
     assert len(evidence) == 1
     assert (
-        evidence[0].document_name == "Catálogo de Produtos e Ingredientes — Café Aurora"
+        evidence[0].document_name == "Catálogo de Produtos e Ingredientes - Café Aurora"
     )
     assert evidence[0].location == "Página 2"
     assert evidence[0].technical_location == "page:2"
@@ -293,12 +379,12 @@ def test_persistent_chroma_retriever_rescues_a_lexically_aligned_structured_reco
         ],
         metadatas=[
             {
-                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
                 "location": "Página 1",
                 "technical_location": "page:1",
             },
             {
-                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
                 "location": "Página 2",
                 "technical_location": "page:2",
             },
@@ -309,7 +395,7 @@ def test_persistent_chroma_retriever_rescues_a_lexically_aligned_structured_reco
             },
             {
                 "document_name": "Configuração das Unidades",
-                "location": "Unidade CA-CPS-01 — Centro",
+                "location": "Unidade CA-CPS-01 - Centro",
                 "technical_location": "json:unidades[0]",
             },
         ],
@@ -330,7 +416,7 @@ def test_persistent_chroma_retriever_rescues_a_lexically_aligned_structured_reco
 
     assert len(evidence) == 1
     assert evidence[0].document_name == "Configuração das Unidades"
-    assert evidence[0].location == "Unidade CA-CPS-01 — Centro"
+    assert evidence[0].location == "Unidade CA-CPS-01 - Centro"
     assert evidence[0].relevance_score >= 0.45
 
 
@@ -347,7 +433,7 @@ def test_persistent_chroma_retriever_rejects_a_lexically_aligned_weak_match(
         metadatas=[
             {
                 "document_name": "Configuração das Unidades",
-                "location": "Unidade CA-CPS-01 — Centro",
+                "location": "Unidade CA-CPS-01 - Centro",
                 "technical_location": "json:unidades[0]",
             }
         ],
@@ -445,7 +531,7 @@ def test_persistent_chroma_retriever_caches_normalized_query_embeddings(
         documents=["Café coado usa grãos Arábica."],
         metadatas=[
             {
-                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
                 "location": "Página 2",
                 "technical_location": "page:2",
             }
@@ -485,7 +571,7 @@ def test_persistent_chroma_retriever_single_flights_concurrent_cache_misses(
         documents=["Café coado usa grãos Arábica."],
         metadatas=[
             {
-                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "document_name": "Catálogo de Produtos e Ingredientes - Café Aurora",
                 "location": "Página 2",
                 "technical_location": "page:2",
             }
@@ -578,10 +664,10 @@ def test_ingestion_builds_citation_ready_index_from_only_approved_sources(
     assert result.indexed_chunks == len(records["ids"])
     assert result.indexed_chunks > 0
     assert document_names == {
-        "Catálogo de Produtos e Ingredientes — Café Aurora",
+        "Catálogo de Produtos e Ingredientes - Café Aurora",
         "Controle de Estoque",
         "Configuração das Unidades",
-        "Manual de Operações das Unidades — Café Aurora",
+        "Manual de Operações das Unidades - Café Aurora",
         "Guia de Atendimento ao Cliente",
         "Política de Despesas e Reembolsos",
     }
@@ -782,7 +868,7 @@ def test_ingestion_rejects_a_pdf_without_native_text(tmp_path: Path):
 
     source_path = tmp_path / "documents"
     source_path.mkdir()
-    (source_path / "Catálogo de Produtos e Ingredientes — Café Aurora.pdf").write_bytes(
+    (source_path / "Catálogo de Produtos e Ingredientes - Café Aurora.pdf").write_bytes(
         b"not a readable PDF"
     )
 

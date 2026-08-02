@@ -44,7 +44,7 @@ class HealthResponse(BaseModel):
     status: str = "healthy"
     environment: str
     version: str = "1.1.0"
-    checks: dict = {}
+    checks: dict[str, bool] = Field(default_factory=dict)
 
 
 class MetricsResponse(BaseModel):
@@ -55,6 +55,13 @@ class MetricsResponse(BaseModel):
     cache_hit_rate: str
     total_input_tokens: int
     total_output_tokens: int
+
+
+class CacheStatsResponse(BaseModel):
+    hits: int
+    misses: int
+    hit_rate: str
+    cached_entries: int
 
 
 class ErrorResponse(BaseModel):

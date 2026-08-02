@@ -13,7 +13,7 @@ def test_runtime_bootstraps_the_persistent_index_before_dropping_privileges() ->
     assert 'ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]' in dockerfile
     assert "USER root" in dockerfile
     assert "HOME=/home/appuser" in dockerfile
-    assert 'RUNTIME_DATA_PATH=/src/data/partner-knowledge-runtime' in entrypoint
+    assert "RUNTIME_DATA_PATH=/src/data/partner-knowledge-runtime" in entrypoint
     assert 'mkdir -p "$RUNTIME_DATA_PATH"' in entrypoint
     assert 'chown -R "$APP_USER:$APP_USER" "$RUNTIME_DATA_PATH"' in entrypoint
     assert 'chown -R "$APP_USER:$APP_USER" "$INDEX_VOLUME_PATH"' in entrypoint

@@ -137,7 +137,7 @@ class FakePartnerKnowledgeRetriever:
         self.evidence = [
             RetrievedEvidence(
                 text="Today's special is grilled salmon with roasted vegetables.",
-                document_name="Catálogo de Produtos e Ingredientes — Café Aurora",
+                document_name="Catálogo de Produtos e Ingredientes - Café Aurora",
                 location="Página 1",
                 technical_location="page:1",
                 relevance_score=0.99,
@@ -177,7 +177,7 @@ def _clear_app_state() -> None:
 
 @pytest.fixture
 def components() -> Components:
-    """Fresh components per test — `app` is a module-level singleton."""
+    """Fresh components per test - `app` is a module-level singleton."""
     return Components()
 
 

@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from langsmith import traceable
@@ -14,6 +14,7 @@ from src.agent import ProductionAgent
 from src.cache import CachedChatResponse, ResponseCache
 from src.config import get_settings
 from src.models import (
+    CacheStatsResponse,
     ChatRequest,
     ChatResponse,
     HealthResponse,
@@ -26,7 +27,10 @@ from src.partner_knowledge.cohere_embeddings import (
     CohereEmbeddingError,
 )
 from src.partner_knowledge.config import get_partner_knowledge_settings
-from src.partner_knowledge.constants import SCOPE_REFUSAL
+from src.partner_knowledge.constants import (
+    GROUNDING_SERVICE_UNAVAILABLE,
+    SCOPE_REFUSAL,
+)
 from src.partner_knowledge.embedding_budget import (
     EmbeddingUsageLedger,
     EmbeddingUsageLedgerError,
@@ -55,27 +59,29 @@ load_dotenv()
 logger = get_logger()
 
 
-def get_security(request: Request) -> SecurityPipeline:
+async def get_security(request: Request) -> SecurityPipeline:
     return request.app.state.security
 
 
-def get_cache(request: Request) -> ResponseCache:
+async def get_cache(request: Request) -> ResponseCache:
     return request.app.state.cache
 
 
-def get_metrics(request: Request) -> MetricsCollector:
+async def get_metrics(request: Request) -> MetricsCollector:
     return request.app.state.metrics
 
 
-def get_agent(request: Request) -> ProductionAgent:
+async def get_agent(request: Request) -> ProductionAgent:
     return request.app.state.agent
 
 
-def get_partner_knowledge_retriever(request: Request) -> PartnerKnowledgeRetriever:
+async def get_partner_knowledge_retriever(
+    request: Request,
+) -> PartnerKnowledgeRetriever:
     return request.app.state.partner_knowledge_retriever
 
 
-def get_evidence_verifier(request: Request) -> EvidenceVerifier:
+async def get_evidence_verifier(request: Request) -> EvidenceVerifier:
     return request.app.state.evidence_verifier
 
 
@@ -190,7 +196,29 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post(
+    "/chat",
+    response_model=ChatResponse,
+    summary="Answer a Partner question",
+    description=(
+        "Returns a grounded answer supported by approved Partner knowledge, "
+        "or a scope refusal when the evidence is insufficient."
+    ),
+    tags=["chat"],
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "description": (
+                "The request was rejected by input validation or security filters."
+            )
+        },
+        status.HTTP_429_TOO_MANY_REQUESTS: {
+            "description": "The request exceeded the configured rate limit."
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "Grounding, generation, or verification is unavailable."
+        },
+    },
+)
 @limiter.limit(get_settings().rate_limit)
 @traceable(name="chat_endpoint")
 async def chat(
@@ -204,7 +232,7 @@ async def chat(
         PartnerKnowledgeRetriever, Depends(get_partner_knowledge_retriever)
     ],
     evidence_verifier: Annotated[EvidenceVerifier, Depends(get_evidence_verifier)],
-):
+) -> dict:
     with RequestTimer() as timer:
         security_notes = []
 
@@ -288,7 +316,6 @@ async def chat(
         if not evidence:
             return _scope_refusal(body.thread_id, security_notes, metrics)
         selected_evidence = evidence[:3]
-        sources = _build_sources(selected_evidence)
         try:
             result = await run_in_threadpool(
                 agent.invoke, cleaned_message, selected_evidence
@@ -315,25 +342,22 @@ async def chat(
                 },
             )
             metrics.record_request(latency_ms=0, error=True)
-            raise HTTPException(
-                status_code=500,
-                detail="An error occurred while processing your request.",
-            )
+            raise _provider_unavailable_exception(exc) from exc
 
         try:
+            if result.get("error") == "malformed_generation":
+                raise ValueError("Agent returned malformed generation output")
             response_text = result["response"]
             model_used = result["model_used"]
             if not isinstance(response_text, str) or not isinstance(model_used, str):
                 raise TypeError("Agent response fields have invalid types")
             claims = [MaterialClaim.model_validate(claim) for claim in result["claims"]]
-        except (KeyError, TypeError, ValueError):
-            return _scope_refusal(body.thread_id, security_notes, metrics)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            metrics.record_request(latency_ms=0, error=True)
+            raise _provider_unavailable_exception(exc) from exc
         if model_used == "error_handler":
             metrics.record_request(latency_ms=0, error=True)
-            raise HTTPException(
-                status_code=503,
-                detail="The grounded answer service is temporarily unavailable.",
-            )
+            raise _provider_unavailable_exception(RuntimeError("agent error handler"))
         if response_text.strip() == SCOPE_REFUSAL:
             return _scope_refusal(body.thread_id, security_notes, metrics)
         if not claim_links_are_valid(claims, selected_evidence):
@@ -342,8 +366,18 @@ async def chat(
             verification = await run_in_threadpool(
                 evidence_verifier.verify, response_text, claims, selected_evidence
             )
-        except Exception:  # The external verifier is unavailable or malformed.
-            return _scope_refusal(body.thread_id, security_notes, metrics)
+        except Exception as exc:  # The external verifier is unavailable.
+            logger.error(
+                "Evidence verification failed",
+                extra={
+                    "extra_data": {
+                        "thread_id": body.thread_id,
+                        "error": str(exc),
+                    }
+                },
+            )
+            metrics.record_request(latency_ms=0, error=True)
+            raise _provider_unavailable_exception(exc) from exc
         if isinstance(
             verification, VerificationResult
         ) and verification.identifies_conflict(selected_evidence):
@@ -355,10 +389,24 @@ async def chat(
                     selected_evidence, verification.conflicting_evidence_ids
                 ),
             )
-        if not isinstance(verification, VerificationResult) or not verification.accepts(
-            claims
-        ):
+        if not isinstance(verification, VerificationResult):
+            metrics.record_request(latency_ms=0, error=True)
+            raise _provider_unavailable_exception(
+                ValueError("Evidence verifier returned an invalid result")
+            )
+        if not verification.accepts(claims):
             return _scope_refusal(body.thread_id, security_notes, metrics)
+
+        sources = _build_sources_for_evidence_ids(
+            selected_evidence,
+            list(
+                dict.fromkeys(
+                    evidence_id
+                    for claim in claims
+                    for evidence_id in claim.evidence_ids
+                )
+            ),
+        )
 
         # ---- Step 4: Output Validation ----
         validated_response, output_warnings = security.check_output(response_text)
@@ -421,7 +469,7 @@ def _provider_unavailable_exception(exc: BaseException) -> HTTPException:
         headers["Retry-After"] = str(retry_after_seconds)
     return HTTPException(
         status_code=503,
-        detail="The grounded answer service is temporarily unavailable.",
+        detail=GROUNDING_SERVICE_UNAVAILABLE,
         headers=headers or None,
     )
 
@@ -485,8 +533,14 @@ def _grounded_conflict(
     }
 
 
-@app.get("/health", response_model=HealthResponse)
-async def health(request: Request):
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Check service health",
+    description="Returns the service environment and initialized component checks.",
+    tags=["operations"],
+)
+async def health(request: Request) -> dict:
     settings = get_settings()
 
     checks = {
@@ -504,11 +558,27 @@ async def health(request: Request):
     }
 
 
-@app.get("/metrics", response_model=MetricsResponse)
-async def metrics_endpoint(metrics: MetricsCollector = Depends(get_metrics)):
+@app.get(
+    "/metrics",
+    response_model=MetricsResponse,
+    summary="Read service metrics",
+    description="Returns request, latency, token, error, and cache metrics.",
+    tags=["operations"],
+)
+async def metrics_endpoint(
+    metrics: Annotated[MetricsCollector, Depends(get_metrics)],
+) -> dict:
     return metrics.summary
 
 
-@app.get("/cache/stats")
-async def cache_stats(cache: ResponseCache = Depends(get_cache)):
+@app.get(
+    "/cache/stats",
+    response_model=CacheStatsResponse,
+    summary="Read cache statistics",
+    description="Returns the current in-memory response-cache statistics.",
+    tags=["operations"],
+)
+async def cache_stats(
+    cache: Annotated[ResponseCache, Depends(get_cache)],
+) -> dict:
     return cache.stats

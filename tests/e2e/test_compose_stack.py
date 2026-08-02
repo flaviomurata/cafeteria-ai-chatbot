@@ -14,6 +14,17 @@ BASE_URL = os.getenv("E2E_BASE_URL", "http://127.0.0.1:8000")
 EXPECTED_ENVIRONMENT = os.getenv("E2E_EXPECTED_ENVIRONMENT", "production")
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("E2E_TIMEOUT_SECONDS", "30"))
 
+SCOPE_REFUSAL = (
+    "Só posso responder a perguntas apoiadas pelo conhecimento dos "
+    "Parceiros do Café Aurora."
+)
+DOCUMENT_CONFLICT_RESPONSE = (
+    "Os documentos recuperados divergem; não posso selecionar uma regra autoritativa."
+)
+GROUNDING_SERVICE_UNAVAILABLE = (
+    "O serviço de respostas fundamentadas está temporariamente indisponível."
+)
+
 
 @pytest.fixture
 async def api_client():
@@ -71,7 +82,7 @@ async def test_compose_api_serves_and_caches_a_fixture_answer(
     assert isinstance(first_body["processing_time_ms"], (int, float))
     assert first_body["sources"] == [
         {
-            "document_name": "E2E fixture — Café Aurora",
+            "document_name": "E2E fixture - Café Aurora",
             "location": "Fixture: daily special",
         }
     ]
@@ -115,3 +126,130 @@ async def test_compose_api_records_cache_and_chat_metrics(
     assert metrics_after["total_requests"] == metrics_before["total_requests"] + 2
     assert cache_after["hits"] == cache_before["hits"] + 1
     assert cache_after["cached_entries"] >= cache_before["cached_entries"]
+
+
+@pytest.mark.asyncio
+async def test_compose_api_refuses_an_unmapped_question_without_evidence(
+    api_client: httpx.AsyncClient,
+):
+    response = await api_client.post(
+        "/chat", json={"message": "Qual é a regra E2E não catalogada?"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["response"] == SCOPE_REFUSAL
+    assert response.json()["model_used"] == "grounding_refusal"
+    assert response.json()["sources"] == []
+
+
+@pytest.mark.asyncio
+async def test_compose_api_refuses_a_partial_answer_without_caching(
+    api_client: httpx.AsyncClient,
+):
+    payload = {"message": "Qual é a resposta E2E parcialmente apoiada?"}
+
+    first = await api_client.post("/chat", json=payload)
+    second = await api_client.post("/chat", json=payload)
+
+    assert first.status_code == 200
+    assert first.json()["response"] == SCOPE_REFUSAL
+    assert first.json()["model_used"] == "grounding_refusal"
+    assert first.json()["cached"] is False
+    assert first.json()["sources"] == []
+    assert second.status_code == 200
+    assert second.json()["cached"] is False
+
+
+@pytest.mark.asyncio
+async def test_compose_api_returns_only_conflicting_sources(
+    api_client: httpx.AsyncClient,
+):
+    response = await api_client.post(
+        "/chat", json={"message": "Quais são as regras E2E conflitantes?"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response"] == DOCUMENT_CONFLICT_RESPONSE
+    assert body["model_used"] == "grounding_conflict"
+    assert body["sources"] == [
+        {
+            "document_name": "E2E fixture - Regra A",
+            "location": "Fixture: conflict A",
+        },
+        {
+            "document_name": "E2E fixture - Regra B",
+            "location": "Fixture: conflict B",
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_compose_api_refuses_an_unsupported_model_claim(
+    api_client: httpx.AsyncClient,
+):
+    response = await api_client.post(
+        "/chat", json={"message": "Qual é a alegação E2E inventada?"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response"] == SCOPE_REFUSAL
+    assert body["model_used"] == "grounding_refusal"
+    assert body["sources"] == []
+
+
+@pytest.mark.asyncio
+async def test_compose_api_returns_503_for_malformed_generation(
+    api_client: httpx.AsyncClient,
+):
+    response = await api_client.post(
+        "/chat", json={"message": "Qual é o formato E2E inválido?"}
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": GROUNDING_SERVICE_UNAVAILABLE}
+
+
+@pytest.mark.asyncio
+async def test_compose_api_returns_503_when_verification_is_unavailable(
+    api_client: httpx.AsyncClient,
+):
+    response = await api_client.post(
+        "/chat", json={"message": "Qual é a verificação E2E indisponível?"}
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": GROUNDING_SERVICE_UNAVAILABLE}
+
+
+@pytest.mark.asyncio
+async def test_compose_api_returns_503_for_malformed_verification(
+    api_client: httpx.AsyncClient,
+):
+    response = await api_client.post(
+        "/chat", json={"message": "Qual é o resultado E2E malformado?"}
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": GROUNDING_SERVICE_UNAVAILABLE}
+
+
+@pytest.mark.asyncio
+async def test_compose_api_ignores_an_indirect_prompt_injection_in_evidence(
+    api_client: httpx.AsyncClient,
+):
+    response = await api_client.post(
+        "/chat", json={"message": "A unidade E2E oferece delivery?"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response"] == "A unidade E2E não oferece delivery."
+    assert body["model_used"] == "local-e2e"
+    assert body["sources"] == [
+        {
+            "document_name": "E2E fixture - Unidade Centro",
+            "location": "Fixture: delivery",
+        }
+    ]

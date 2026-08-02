@@ -1,7 +1,8 @@
 import os
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings
+from pydantic import model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -19,10 +20,18 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 300
     max_retries: int = 3
 
-    model_config = {
-        "env_file": ".env",
-        "extra": "ignore",
-    }
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @model_validator(mode="after")
+    def validate_e2e_mode(self):
+        if self.e2e_mode.lower() == "local" and self.app_env.lower() not in {
+            "test",
+            "e2e",
+        }:
+            raise ValueError(
+                "E2E_MODE=local is only allowed in APP_ENV=test or APP_ENV=e2e"
+            )
+        return self
 
     @property
     def is_production(self) -> bool:
