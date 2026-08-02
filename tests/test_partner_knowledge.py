@@ -67,6 +67,7 @@ def test_partner_knowledge_settings_default_to_cohere_embeddings(
 
     assert settings.embedding_model == "embed-v4.0"
     assert settings.query_embedding_cache_size == 1024
+    assert settings.relevance_threshold == 0.45
     assert settings.cohere_api_key == ""
 
 

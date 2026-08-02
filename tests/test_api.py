@@ -6,6 +6,8 @@ because it is the sole component that calls an external service. Security,
 cache, and metrics run for real.
 """
 
+from math import sqrt
+
 import chromadb
 import pytest
 from fastapi.concurrency import run_in_threadpool
@@ -35,6 +37,7 @@ def _create_weak_match_retriever(tmp_path) -> PersistentChromaRetriever:
     collection = chroma_client.get_or_create_collection(
         "partner_knowledge", metadata={"hnsw:space": "cosine"}
     )
+    weak_score = 0.44
     collection.add(
         ids=["weak-match"],
         documents=["Regra sobre um assunto não relacionado."],
@@ -45,19 +48,95 @@ def _create_weak_match_retriever(tmp_path) -> PersistentChromaRetriever:
                 "technical_location": "section:1",
             }
         ],
-        embeddings=[[0.0, 1.0]],
+        embeddings=[[weak_score, sqrt(1 - weak_score**2)]],
     )
     return PersistentChromaRetriever(
         index_path,
         embed_query=lambda _: [1.0, 0.0],
         candidate_limit=1,
-        relevance_threshold=0.75,
+    )
+
+
+def _create_calibrated_threshold_retriever(tmp_path) -> PersistentChromaRetriever:
+    index_path = tmp_path / "partner-index"
+    chroma_client = chromadb.PersistentClient(path=str(index_path))
+    collection = chroma_client.get_or_create_collection(
+        "partner_knowledge", metadata={"hnsw:space": "cosine"}
+    )
+    supported_score = 0.46
+    collection.add(
+        ids=["supported"],
+        documents=["O latte pode ser preparado com bebida vegetal de aveia."],
+        metadatas=[
+            {
+                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "location": "Página 18",
+                "technical_location": "page:18",
+            }
+        ],
+        embeddings=[[supported_score, sqrt(1 - supported_score**2)]],
+    )
+
+    def embed_query(query: str) -> list[float]:
+        return [1.0, 0.0] if "latte" in query.lower() else [-1.0, 0.0]
+
+    return PersistentChromaRetriever(
+        index_path,
+        embed_query=embed_query,
+        candidate_limit=1,
     )
 
 
 # --------------------------------------------------------------------------- #
 # POST /chat — happy path                                                     #
 # --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_chat_answers_a_supported_question_at_the_cohere_threshold(
+    client: AsyncClient, agent: FakeAgent, tmp_path
+):
+    retriever = await run_in_threadpool(
+        _create_calibrated_threshold_retriever, tmp_path
+    )
+    app.dependency_overrides[get_partner_knowledge_retriever] = lambda: retriever
+    agent.response = "O latte pode ser preparado com bebida vegetal de aveia."
+
+    response = await client.post(
+        CHAT_URL,
+        json={"message": "O latte pode ser preparado com bebida vegetal?"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response"] == agent.response
+    assert body["sources"] == [
+        {
+            "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+            "location": "Página 18",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chat_refuses_an_unsupported_question_at_the_cohere_threshold(
+    client: AsyncClient, agent: FakeAgent, tmp_path
+):
+    retriever = await run_in_threadpool(
+        _create_calibrated_threshold_retriever, tmp_path
+    )
+    app.dependency_overrides[get_partner_knowledge_retriever] = lambda: retriever
+
+    response = await client.post(
+        CHAT_URL, json={"message": "Qual é a capital da França?"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response"] == SCOPE_REFUSAL
+    assert body["model_used"] == "grounding_refusal"
+    assert body["sources"] == []
+    assert agent.calls == []
 
 
 @pytest.mark.asyncio

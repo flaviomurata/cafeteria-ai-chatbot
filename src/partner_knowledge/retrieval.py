@@ -12,6 +12,7 @@ import chromadb
 from chromadb.errors import ChromaError
 
 from src.cache import QueryEmbeddingCache
+from src.partner_knowledge.constants import DEFAULT_RELEVANCE_THRESHOLD
 from src.partner_knowledge.index_storage import (
     ACTIVATION_LOCK_NAME,
     active_collection_name,
@@ -65,7 +66,7 @@ class PersistentChromaRetriever:
         *,
         embed_query: Callable[[str], list[float]] | None = None,
         candidate_limit: int = 8,
-        relevance_threshold: float = 0.75,
+        relevance_threshold: float = DEFAULT_RELEVANCE_THRESHOLD,
         embedding_model: str = "embed-v4.0",
         query_embedding_cache_size: int = 1024,
         embedding_metadata: Mapping[str, str] | None = None,

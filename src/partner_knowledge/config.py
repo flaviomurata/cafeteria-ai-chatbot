@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.partner_knowledge.constants import DEFAULT_RELEVANCE_THRESHOLD
 from src.partner_knowledge.embedding_budget import DEFAULT_MONTHLY_CALL_LIMIT
 
 
@@ -27,7 +28,7 @@ class PartnerKnowledgeSettings(BaseSettings):
     embedding_dimension: Literal[256, 512, 1024, 1536] = 1024
     query_embedding_cache_size: int = Field(default=1024, ge=0)
     retrieval_candidate_limit: int = Field(default=8, ge=1)
-    relevance_threshold: float = Field(default=0.75, ge=0, le=1)
+    relevance_threshold: float = Field(default=DEFAULT_RELEVANCE_THRESHOLD, ge=0, le=1)
     evidence_verifier_model: str = "gemini-3.6-flash"
     evidence_verifier_timeout_seconds: int = Field(default=30, ge=1)
 
