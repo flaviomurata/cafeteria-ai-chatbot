@@ -1,6 +1,11 @@
+import base64
+import json
 import shutil
+import struct
 import threading
+import zlib
 from concurrent.futures import ThreadPoolExecutor
+from math import sqrt
 from pathlib import Path
 
 import chromadb
@@ -218,6 +223,168 @@ def test_persistent_chroma_retriever_returns_only_relevant_citation_ready_eviden
     assert evidence[0].location == "Página 2"
     assert evidence[0].technical_location == "page:2"
     assert evidence[0].relevance_score == 1.0
+
+
+def test_persistent_chroma_retriever_rescues_a_lexically_aligned_structured_record(
+    tmp_path: Path,
+):
+    index_path = tmp_path / "index"
+    collection = chromadb.PersistentClient(
+        path=str(index_path)
+    ).get_or_create_collection("partner_knowledge", metadata={"hnsw:space": "cosine"})
+    collection.add(
+        ids=[
+            "semantic-distractor-1",
+            "semantic-distractor-2",
+            "semantic-distractor-3",
+            "unit-config",
+        ],
+        documents=[
+            "A general product note without unit configuration details.",
+            "A general ingredient note without unit configuration details.",
+            "A general operations note without unit configuration details.",
+            '{"nome":"Centro","servicos":{"delivery":false}}',
+        ],
+        metadatas=[
+            {
+                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "location": "Página 1",
+                "technical_location": "page:1",
+            },
+            {
+                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "location": "Página 2",
+                "technical_location": "page:2",
+            },
+            {
+                "document_name": "Manual de Operações das Unidades",
+                "location": "Seção 1",
+                "technical_location": "section:1",
+            },
+            {
+                "document_name": "Configuração das Unidades",
+                "location": "Unidade CA-CPS-01 — Centro",
+                "technical_location": "json:unidades[0]",
+            },
+        ],
+        embeddings=[
+            [0.44, sqrt(1 - 0.44**2)],
+            [0.43, sqrt(1 - 0.43**2)],
+            [0.42, sqrt(1 - 0.42**2)],
+            [0.315, sqrt(1 - 0.315**2)],
+        ],
+    )
+    retriever = PersistentChromaRetriever(
+        index_path,
+        embed_query=lambda _query: [1.0, 0.0],
+        candidate_limit=1,
+    )
+
+    evidence = retriever.retrieve("A unidade Centro oferece delivery?")
+
+    assert len(evidence) == 1
+    assert evidence[0].document_name == "Configuração das Unidades"
+    assert evidence[0].location == "Unidade CA-CPS-01 — Centro"
+    assert evidence[0].relevance_score >= 0.45
+
+
+def test_persistent_chroma_retriever_rejects_a_lexically_aligned_weak_match(
+    tmp_path: Path,
+):
+    index_path = tmp_path / "index"
+    collection = chromadb.PersistentClient(
+        path=str(index_path)
+    ).get_or_create_collection("partner_knowledge", metadata={"hnsw:space": "cosine"})
+    collection.add(
+        ids=["weak-match"],
+        documents=['{"nome":"Centro","servicos":{"delivery":false}}'],
+        metadatas=[
+            {
+                "document_name": "Configuração das Unidades",
+                "location": "Unidade CA-CPS-01 — Centro",
+                "technical_location": "json:unidades[0]",
+            }
+        ],
+        embeddings=[[0.10, sqrt(1 - 0.10**2)]],
+    )
+    retriever = PersistentChromaRetriever(
+        index_path,
+        embed_query=lambda _query: [1.0, 0.0],
+        candidate_limit=1,
+    )
+
+    evidence = retriever.retrieve("A unidade Centro oferece delivery?")
+
+    assert evidence == []
+
+
+def test_frozen_cohere_calibration_recovers_representative_partner_evidence(
+    tmp_path: Path,
+):
+    fixture_path = Path(__file__).parent / "fixtures/cohere_retrieval_calibration.json"
+    calibration = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    assert calibration["embedding_model"] == "embed-v4.0"
+    assert calibration["embedding_provider"] == "cohere"
+    assert calibration["embedding_dimension"] == 1024
+    assert calibration["encoding"] == "zlib+base64 little-endian float32"
+    assert calibration["relevance_threshold"] == 0.45
+
+    cases = calibration["cases"]
+    index_path = tmp_path / "calibration-index"
+    chroma_client = chromadb.PersistentClient(path=str(index_path))
+    collection = chroma_client.get_or_create_collection(
+        "partner_knowledge", metadata={"hnsw:space": "cosine"}
+    )
+    embedding_dimension = calibration["embedding_dimension"]
+
+    def decode_embedding(encoded: str) -> list[float]:
+        raw = zlib.decompress(base64.b64decode(encoded))
+        return list(struct.unpack(f"<{embedding_dimension}f", raw))
+
+    current_query_embedding: list[float] = []
+
+    def embed_query(_query: str) -> list[float]:
+        return current_query_embedding
+
+    retriever = PersistentChromaRetriever(
+        index_path,
+        embed_query=embed_query,
+        candidate_limit=1,
+    )
+
+    for case_index, case in enumerate(cases):
+        current_query_embedding = decode_embedding(case["query_embedding"])
+        document_embedding = decode_embedding(case["document_embedding"])
+        assert len(current_query_embedding) == embedding_dimension
+        assert len(document_embedding) == embedding_dimension
+        if case_index:
+            collection.delete(ids=["calibrated-evidence"])
+        collection.add(
+            ids=["calibrated-evidence"],
+            documents=[case["text"]],
+            metadatas=[
+                {
+                    "document_name": case["document_name"],
+                    "location": case["location"],
+                    "technical_location": case["technical_location"],
+                }
+            ],
+            embeddings=[document_embedding],
+        )
+
+        evidence = retriever.retrieve(case["query"])
+
+        assert evidence, case["id"]
+        assert evidence[0].document_name == case["document_name"]
+        assert evidence[0].location == case["location"]
+        assert sum(
+            query_value * document_value
+            for query_value, document_value in zip(
+                current_query_embedding, document_embedding, strict=True
+            )
+        ) == pytest.approx(case["semantic_score"], abs=0.0002)
+        assert evidence[0].relevance_score >= calibration["relevance_threshold"]
 
 
 def test_persistent_chroma_retriever_caches_normalized_query_embeddings(

@@ -1,7 +1,9 @@
 import fcntl
 import hashlib
 import os
+import re
 import sqlite3
+import unicodedata
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -24,6 +26,50 @@ from src.provider_errors import (
 )
 
 _QUERY_EMBEDDING_LOCK_SLOT_COUNT = 128
+_SEMANTIC_CANDIDATE_MULTIPLIER = 4
+_SEMANTIC_RELEVANCE_WEIGHT = 0.5
+_LEXICAL_RELEVANCE_WEIGHT = 0.5
+_MINIMUM_SEMANTIC_SCORE_FOR_LEXICAL_RESCUE = 0.15
+_LEXICAL_STOP_WORDS = frozenset(
+    {
+        "a",
+        "as",
+        "ao",
+        "aos",
+        "com",
+        "da",
+        "das",
+        "de",
+        "do",
+        "dos",
+        "e",
+        "em",
+        "for",
+        "is",
+        "na",
+        "nas",
+        "no",
+        "nos",
+        "o",
+        "os",
+        "para",
+        "por",
+        "qual",
+        "quais",
+        "que",
+        "sao",
+        "the",
+        "um",
+        "uma",
+        "what",
+    }
+)
+_LEXICAL_TOKEN_ALIASES = {
+    "item": {"itens"},
+    "itens": {"item"},
+    "nivel": {"status"},
+    "status": {"nivel"},
+}
 
 
 class PartnerKnowledgeIndexUnavailableError(RuntimeError):
@@ -53,11 +99,12 @@ class PartnerKnowledgeRetriever(Protocol):
 
 
 class PersistentChromaRetriever:
-    """Availability check for the local persistent Chroma Partner knowledge index.
+    """Retrieve grounded evidence from the local persistent Partner knowledge index.
 
-    Retrieval implementation is added with the ingestion and chat-flow tickets. Keeping
-    this adapter at the boundary lets a future hosted index replace it without route
-    changes.
+    The adapter uses Cohere semantic retrieval as its primary signal and a bounded
+    lexical rerank to recover exact identifiers and fields in structured CSV/JSON
+    records. Keeping both signals at this boundary lets a future hosted index replace
+    the implementation without route changes.
     """
 
     def __init__(
@@ -182,9 +229,13 @@ class PersistentChromaRetriever:
                 collection = client.get_collection(
                     active_collection_name(self._index_path)
                 )
+                semantic_candidate_limit = min(
+                    self._candidate_limit * _SEMANTIC_CANDIDATE_MULTIPLIER,
+                    collection.count(),
+                )
                 results = collection.query(
                     query_embeddings=[query_embedding],
-                    n_results=self._candidate_limit,
+                    n_results=semantic_candidate_limit,
                     include=["documents", "metadatas", "distances"],
                 )
         except (ChromaError, OSError, ValueError, sqlite3.Error) as exc:
@@ -192,26 +243,36 @@ class PersistentChromaRetriever:
                 f"Partner knowledge index is unreadable at {self._index_path}."
             ) from exc
 
-        evidence = []
+        candidates = []
         for text, metadata, distance in zip(
             results["documents"][0],
             results["metadatas"][0],
             results["distances"][0],
             strict=True,
         ):
-            # Chroma's cosine distance maps directly onto a [0, 1] relevance score.
-            relevance_score = max(0.0, min(1.0, 1.0 - float(distance)))
+            # Chroma's cosine distance maps directly onto a [0, 1] semantic score.
+            semantic_score = max(0.0, min(1.0, 1.0 - float(distance)))
+            lexical_score = _lexical_relevance_score(query, text, metadata)
+            relevance_score = _combined_relevance_score(
+                semantic_score,
+                lexical_score,
+                threshold=self._relevance_threshold,
+            )
             if relevance_score >= self._relevance_threshold:
-                evidence.append(
-                    RetrievedEvidence(
-                        text=text,
-                        document_name=metadata["document_name"],
-                        location=metadata["location"],
-                        technical_location=metadata["technical_location"],
-                        relevance_score=relevance_score,
+                candidates.append(
+                    (
+                        relevance_score,
+                        RetrievedEvidence(
+                            text=text,
+                            document_name=metadata["document_name"],
+                            location=metadata["location"],
+                            technical_location=metadata["technical_location"],
+                            relevance_score=relevance_score,
+                        ),
                     )
                 )
-        return evidence
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return [evidence for _, evidence in candidates[: self._candidate_limit]]
 
     def _get_query_embedding(self, query: str) -> list[float]:
         normalized_query = query.lower().strip()
@@ -289,3 +350,75 @@ def _metadata_matches(
     actual: Mapping[str, object], expected: Mapping[str, str]
 ) -> bool:
     return all(str(actual.get(key)) == value for key, value in expected.items())
+
+
+def _combined_relevance_score(
+    semantic_score: float,
+    lexical_score: float,
+    *,
+    threshold: float,
+) -> float:
+    """Combine Cohere similarity with exact business-term overlap.
+
+    A semantic match that already clears the configured threshold remains valid. For
+    weaker semantic matches, lexical overlap can recover structured records whose
+    exact unit, item, status, or policy terms are meaningful but underrepresented in
+    the embedding ranking.
+    """
+
+    if semantic_score >= threshold:
+        return semantic_score
+    if semantic_score < _MINIMUM_SEMANTIC_SCORE_FOR_LEXICAL_RESCUE:
+        return semantic_score
+    return (
+        semantic_score * _SEMANTIC_RELEVANCE_WEIGHT
+        + lexical_score * _LEXICAL_RELEVANCE_WEIGHT
+    )
+
+
+def _lexical_relevance_score(
+    query: str,
+    text: str,
+    metadata: Mapping[str, object],
+) -> float:
+    query_tokens = _content_token_variants(query)
+    if not query_tokens:
+        return 0.0
+    searchable_text = " ".join(
+        (
+            text,
+            str(metadata.get("document_name", "")),
+            str(metadata.get("location", "")),
+        )
+    )
+    candidate_tokens = {
+        variant
+        for token in _normalized_tokens(searchable_text)
+        for variant in _token_variants(token)
+    }
+    matches = sum(bool(variants & candidate_tokens) for variants in query_tokens)
+    return matches / len(query_tokens)
+
+
+def _content_token_variants(value: str) -> list[set[str]]:
+    return [
+        set(_token_variants(token))
+        for token in _normalized_tokens(value)
+        if token not in _LEXICAL_STOP_WORDS
+    ]
+
+
+def _normalized_tokens(value: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKD", value)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return re.findall(r"[a-z0-9]+", ascii_text.lower())
+
+
+def _token_variants(token: str) -> set[str]:
+    variants = {token}
+    variants.update(_LEXICAL_TOKEN_ALIASES.get(token, set()))
+    if token.endswith("s") and len(token) > 4:
+        variants.add(token[:-1])
+    if len(token) >= 6:
+        variants.add(token[:6])
+    return variants

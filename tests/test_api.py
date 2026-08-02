@@ -87,6 +87,130 @@ def _create_calibrated_threshold_retriever(tmp_path) -> PersistentChromaRetrieve
     )
 
 
+def _create_representative_question_retriever(
+    tmp_path,
+    *,
+    relevant_text: str,
+    document_name: str,
+    location: str,
+    semantic_score: float,
+) -> PersistentChromaRetriever:
+    index_path = tmp_path / "partner-index"
+    chroma_client = chromadb.PersistentClient(path=str(index_path))
+    collection = chroma_client.get_or_create_collection(
+        "partner_knowledge", metadata={"hnsw:space": "cosine"}
+    )
+    collection.add(
+        ids=["semantic-distractor", "supported"],
+        documents=[
+            "Conteúdo aprovado sobre outro assunto operacional.",
+            relevant_text,
+        ],
+        metadatas=[
+            {
+                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "location": "Página 1",
+                "technical_location": "page:1",
+            },
+            {
+                "document_name": document_name,
+                "location": location,
+                "technical_location": "fixture:supported",
+            },
+        ],
+        embeddings=[
+            [0.40, sqrt(1 - 0.40**2)],
+            [semantic_score, sqrt(1 - semantic_score**2)],
+        ],
+    )
+    return PersistentChromaRetriever(
+        index_path,
+        embed_query=lambda _query: [1.0, 0.0],
+        candidate_limit=2,
+    )
+
+
+def _create_expenses_retriever(tmp_path) -> PersistentChromaRetriever:
+    index_path = tmp_path / "partner-index"
+    chroma_client = chromadb.PersistentClient(path=str(index_path))
+    collection = chroma_client.get_or_create_collection(
+        "partner_knowledge", metadata={"hnsw:space": "cosine"}
+    )
+    collection.add(
+        ids=[
+            "negative-policy",
+            "category-transport",
+            "category-meal",
+            "category-hotel",
+            "category-material",
+        ],
+        documents=[
+            (
+                "6. Despesas não reembolsáveis\n"
+                "Despesas pessoais, multas e itens sem relação com o trabalho "
+                "não são reembolsáveis."
+            ),
+            (
+                "Deslocamento | Transporte público, aplicativo, táxi autorizado e "
+                "pedágio | Deve estar ligado a atividade de trabalho."
+            ),
+            (
+                "Alimentação em serviço externo | Refeição durante viagem, "
+                "treinamento ou apoio em outra unidade | Não se aplica à rotina "
+                "normal na unidade de lotação."
+            ),
+            (
+                "Hospedagem | Pernoite aprovado em viagem corporativa | Exige "
+                "autorização prévia da Diretoria ou gestor delegado."
+            ),
+            (
+                "Materiais emergenciais | Pequenos insumos ou itens de operação "
+                "não disponíveis | Somente quando o processo normal não atender "
+                "ao prazo."
+            ),
+        ],
+        metadatas=[
+            {
+                "document_name": "Política de Despesas e Reembolsos",
+                "location": "Seção: 6. Despesas não reembolsáveis",
+                "technical_location": "section:6",
+            },
+            {
+                "document_name": "Política de Despesas e Reembolsos",
+                "location": "Tabela 4, linha 2",
+                "technical_location": "table:4:row:2",
+            },
+            {
+                "document_name": "Política de Despesas e Reembolsos",
+                "location": "Tabela 4, linha 3",
+                "technical_location": "table:4:row:3",
+            },
+            {
+                "document_name": "Política de Despesas e Reembolsos",
+                "location": "Tabela 4, linha 4",
+                "technical_location": "table:4:row:4",
+            },
+            {
+                "document_name": "Política de Despesas e Reembolsos",
+                "location": "Tabela 4, linha 5",
+                "technical_location": "table:4:row:5",
+            },
+        ],
+        embeddings=[
+            [0.5609, sqrt(1 - 0.5609**2)],
+            [0.2204, sqrt(1 - 0.2204**2)],
+            [0.1870, sqrt(1 - 0.1870**2)],
+            [0.1665, sqrt(1 - 0.1665**2)],
+            [0.1406, sqrt(1 - 0.1406**2)],
+        ],
+    )
+    return PersistentChromaRetriever(
+        index_path,
+        embed_query=lambda _query: [1.0, 0.0],
+        candidate_limit=3,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # POST /chat — happy path                                                     #
 # --------------------------------------------------------------------------- #
@@ -129,6 +253,162 @@ async def test_chat_refuses_an_unsupported_question_at_the_cohere_threshold(
 
     response = await client.post(
         CHAT_URL, json={"message": "Qual é a capital da França?"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response"] == SCOPE_REFUSAL
+    assert body["model_used"] == "grounding_refusal"
+    assert body["sources"] == []
+    assert agent.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("question", "relevant_text", "document_name", "location", "semantic_score"),
+    [
+        (
+            "Qual é o horário de funcionamento da unidade Centro aos sábados?",
+            '{"nome":"Centro","horarios":{"sabado":{"abre":"07:00","fecha":"20:00"}}}',
+            "Configuração das Unidades",
+            "Unidade CA-CPS-01 — Centro",
+            0.3543,
+        ),
+        (
+            "A unidade Centro oferece delivery?",
+            '{"nome":"Centro","servicos":{"delivery":false}}',
+            "Configuração das Unidades",
+            "Unidade CA-CPS-01 — Centro",
+            0.3149,
+        ),
+        (
+            "Quais itens estão em nível crítico na unidade Cambuí?",
+            (
+                "Código da unidade: CA-CPS-02\n"
+                "Código do item: ING-018\n"
+                "Descrição: Frango desfiado\n"
+                "Status: CRÍTICO"
+            ),
+            "Controle de Estoque",
+            "Unidade CA-CPS-02, item ING-018 — Frango desfiado",
+            0.4448,
+        ),
+        (
+            "Quais despesas são reembolsáveis?",
+            (
+                "5. Categorias de despesa\n"
+                "Deslocamento, alimentação em serviço externo, hospedagem e "
+                "materiais emergenciais são categorias previstas na política de "
+                "reembolso."
+            ),
+            "Política de Despesas e Reembolsos",
+            "Seção: 5. Categorias de despesa",
+            0.40,
+        ),
+    ],
+    ids=["unit-hours", "unit-delivery", "critical-inventory", "expenses"],
+)
+async def test_chat_answers_representative_supported_partner_questions(
+    client: AsyncClient,
+    agent: FakeAgent,
+    tmp_path,
+    question: str,
+    relevant_text: str,
+    document_name: str,
+    location: str,
+    semantic_score: float,
+):
+    retriever = await run_in_threadpool(
+        _create_representative_question_retriever,
+        tmp_path,
+        relevant_text=relevant_text,
+        document_name=document_name,
+        location=location,
+        semantic_score=semantic_score,
+    )
+    app.dependency_overrides[get_partner_knowledge_retriever] = lambda: retriever
+    agent.response = "Resposta apoiada pelo conhecimento da Café Aurora."
+
+    response = await client.post(CHAT_URL, json={"message": question})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response"] == agent.response
+    assert body["model_used"] == "primary"
+    assert body["sources"] == [{"document_name": document_name, "location": location}]
+
+
+@pytest.mark.asyncio
+async def test_chat_answers_expenses_after_retrieval_and_verification(
+    client: AsyncClient,
+    agent: FakeAgent,
+    evidence_verifier,
+    tmp_path,
+):
+    retriever = await run_in_threadpool(_create_expenses_retriever, tmp_path)
+    app.dependency_overrides[get_partner_knowledge_retriever] = lambda: retriever
+    agent.response = (
+        "As categorias previstas incluem deslocamento, alimentação em serviço "
+        "externo e hospedagem."
+    )
+    agent.claims = [
+        {
+            "text": "Deslocamento é uma categoria prevista.",
+            "evidence_ids": ["evidence-1"],
+        },
+        {
+            "text": "Alimentação em serviço externo é uma categoria prevista.",
+            "evidence_ids": ["evidence-2"],
+        },
+        {
+            "text": "Hospedagem é uma categoria prevista.",
+            "evidence_ids": ["evidence-3"],
+        },
+    ]
+
+    response = await client.post(
+        CHAT_URL, json={"message": "Quais despesas são reembolsáveis?"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response"] == agent.response
+    assert body["sources"][:2] == [
+        {
+            "document_name": "Política de Despesas e Reembolsos",
+            "location": "Tabela 4, linha 2",
+        },
+        {
+            "document_name": "Política de Despesas e Reembolsos",
+            "location": "Tabela 4, linha 3",
+        },
+    ]
+    assert body["sources"][2] == {
+        "document_name": "Política de Despesas e Reembolsos",
+        "location": "Tabela 4, linha 4",
+    }
+    assert evidence_verifier.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_chat_refuses_a_lexically_similar_unsupported_structured_question(
+    client: AsyncClient,
+    agent: FakeAgent,
+    tmp_path,
+):
+    retriever = await run_in_threadpool(
+        _create_representative_question_retriever,
+        tmp_path,
+        relevant_text='{"nome":"Centro","servicos":{"delivery":false}}',
+        document_name="Configuração das Unidades",
+        location="Unidade CA-CPS-01 — Centro",
+        semantic_score=0.40,
+    )
+    app.dependency_overrides[get_partner_knowledge_retriever] = lambda: retriever
+
+    response = await client.post(
+        CHAT_URL,
+        json={"message": "A unidade Centro oferece entrega de sushi?"},
     )
 
     assert response.status_code == 200
