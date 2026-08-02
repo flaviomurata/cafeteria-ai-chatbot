@@ -10,8 +10,13 @@ COPY --from=ghcr.io/astral-sh/uv@sha256:606e70c71c852d03f611b1e56a195d0864850701
 
 WORKDIR /src
 
-# Non-root user, and hand it ownership of the workdir so uv can create .venv there
-RUN useradd --create-home appuser && chown appuser:appuser /src
+# Prepare the runtime user and the persistent mount target. Fresh named volumes
+# inherit the mount target's ownership; existing volumes are repaired by the entrypoint.
+RUN useradd --create-home appuser \
+    && mkdir -p /src/data/partner-knowledge-index \
+    && chown -R appuser:appuser /src
+
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Dependency manifests first, for Docker layer caching
 COPY --chown=appuser:appuser pyproject.toml uv.lock ./
@@ -31,4 +36,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status == 200 else 1)"]
 
 # Run uvicorn straight from the venv, avoiding a uv re-sync at runtime
+USER root
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/src/.venv/bin/uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
