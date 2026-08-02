@@ -219,6 +219,7 @@ __marimo__/
 
 # Generated Partner knowledge index
 data/partner-knowledge-index/
+data/partner-knowledge-runtime/
 
 # Agent scaffolding - local only
 AGENTS.md

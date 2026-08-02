@@ -127,6 +127,7 @@ class PartnerKnowledgeIngestor:
                 exclusive=True,
                 non_blocking=True,
                 lock_name=INDEX_LOCK_NAME,
+                lock_directory=self._settings.runtime_data_path,
             ):
                 return self._ingest_locked()
         except BlockingIOError as exc:
@@ -243,6 +244,7 @@ class PartnerKnowledgeIngestor:
                 self._settings.partner_index_path,
                 exclusive=True,
                 lock_name=ACTIVATION_LOCK_NAME,
+                lock_directory=self._settings.runtime_data_path,
             ):
                 activate_collection(self._settings.partner_index_path, staging_name)
                 activation_committed = True

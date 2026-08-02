@@ -37,6 +37,7 @@ from src.partner_knowledge.retrieval import (
     PartnerKnowledgeRetriever,
     PersistentChromaRetriever,
     RetrievedEvidence,
+    prepare_runtime_index,
 )
 from src.partner_knowledge.verification import (
     EvidenceVerifier,
@@ -110,6 +111,12 @@ async def lifespan(app: FastAPI):
         app.state.evidence_verifier = LocalEvidenceVerifier()
     else:
         partner_knowledge_settings = get_partner_knowledge_settings()
+        await run_in_threadpool(
+            prepare_runtime_index,
+            partner_knowledge_settings.partner_index_path,
+            partner_knowledge_settings.runtime_index_path,
+            lock_directory=partner_knowledge_settings.runtime_data_path,
+        )
         embedding_client = CohereEmbeddingClient(
             partner_knowledge_settings.cohere_api_key,
             model=partner_knowledge_settings.embedding_model,
@@ -120,7 +127,7 @@ async def lifespan(app: FastAPI):
             ),
         )
         app.state.partner_knowledge_retriever = PersistentChromaRetriever(
-            partner_knowledge_settings.partner_index_path,
+            partner_knowledge_settings.runtime_index_path,
             embed_query=embedding_client.embed_query,
             candidate_limit=partner_knowledge_settings.retrieval_candidate_limit,
             relevance_threshold=partner_knowledge_settings.relevance_threshold,
@@ -128,6 +135,11 @@ async def lifespan(app: FastAPI):
             query_embedding_cache_size=(
                 partner_knowledge_settings.query_embedding_cache_size
             ),
+            query_embedding_cache_path=(
+                partner_knowledge_settings.runtime_data_path
+                / ".query-embedding-cache.sqlite3"
+            ),
+            lock_directory=partner_knowledge_settings.runtime_data_path,
             embedding_metadata=embedding_client.collection_metadata,
             embedding_cache_key=(
                 f"cohere:{partner_knowledge_settings.embedding_model}:"

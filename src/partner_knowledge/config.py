@@ -20,6 +20,7 @@ class PartnerKnowledgeSettings(BaseSettings):
 
     partner_document_source: Path = Path("media/cafeteria-documents")
     partner_index_path: Path = Path("data/partner-knowledge-index")
+    runtime_data_path: Path = Path("data/partner-knowledge-runtime")
     cohere_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("COHERE_API_KEY", "CO_API_KEY"),
@@ -34,7 +35,11 @@ class PartnerKnowledgeSettings(BaseSettings):
 
     @property
     def embedding_usage_ledger_path(self) -> Path:
-        return self.partner_index_path / ".cohere-embedding-usage.sqlite3"
+        return self.runtime_data_path / ".cohere-embedding-usage.sqlite3"
+
+    @property
+    def runtime_index_path(self) -> Path:
+        return self.runtime_data_path / "partner-knowledge-index"
 
     @property
     def embedding_monthly_call_limit(self) -> int:

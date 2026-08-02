@@ -25,10 +25,16 @@ def partner_knowledge_index_lock(
     exclusive: bool,
     non_blocking: bool = False,
     lock_name: str = ACTIVATION_LOCK_NAME,
+    lock_directory: Path | None = None,
 ) -> Iterator[None]:
     """Coordinate readers and the single writer across processes."""
+    lock_root = lock_directory or index_path
+    if lock_directory is not None:
+        lock_root.mkdir(parents=True, exist_ok=True)
     try:
-        descriptor = os.open(index_path / lock_name, os.O_RDWR | os.O_CREAT, 0o600)
+        descriptor = os.open(
+            lock_root / lock_name, os.O_RDWR | os.O_CREAT, 0o600
+        )
     except OSError as exc:
         raise PartnerKnowledgeIndexLockError(
             f"Unable to open the Partner knowledge index lock at {index_path}."

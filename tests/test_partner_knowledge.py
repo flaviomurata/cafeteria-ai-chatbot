@@ -18,6 +18,7 @@ from src.partner_knowledge.index_storage import active_collection_name
 from src.partner_knowledge.retrieval import (
     PartnerKnowledgeIndexUnavailableError,
     PersistentChromaRetriever,
+    prepare_runtime_index,
 )
 
 
@@ -30,12 +31,19 @@ def test_partner_knowledge_settings_accept_configured_retrieval_values(tmp_path:
     settings = PartnerKnowledgeSettings(
         partner_document_source=tmp_path / "documents",
         partner_index_path=tmp_path / "index",
+        runtime_data_path=tmp_path / "runtime",
         retrieval_candidate_limit=7,
         relevance_threshold=0.83,
     )
 
     assert settings.partner_document_source == tmp_path / "documents"
     assert settings.partner_index_path == tmp_path / "index"
+    assert settings.embedding_usage_ledger_path == (
+        tmp_path / "runtime" / ".cohere-embedding-usage.sqlite3"
+    )
+    assert settings.runtime_index_path == (
+        tmp_path / "runtime" / "partner-knowledge-index"
+    )
     assert settings.embedding_model == "embed-v4.0"
     assert settings.retrieval_candidate_limit == 7
     assert settings.relevance_threshold == 0.83
@@ -106,6 +114,44 @@ def test_persistent_chroma_retriever_rejects_an_incomplete_index(tmp_path: Path)
 
     with pytest.raises(PartnerKnowledgeIndexUnavailableError, match="chroma.sqlite3"):
         retriever.ensure_available()
+
+
+def test_runtime_index_is_copied_to_writable_storage(tmp_path: Path):
+    source_index_path = tmp_path / "source-index"
+    runtime_data_path = tmp_path / "runtime"
+    runtime_index_path = runtime_data_path / "partner-knowledge-index"
+    collection = chromadb.PersistentClient(
+        path=str(source_index_path)
+    ).get_or_create_collection("partner_knowledge")
+    collection.add(
+        ids=["catalog-product-1"],
+        documents=["Coffee beans are approved for Partner orders."],
+        metadatas=[
+            {
+                "document_name": "catalog.csv",
+                "location": "Row 1",
+                "technical_location": "catalog.csv:1",
+            }
+        ],
+        embeddings=[[0.1, 0.2, 0.3]],
+    )
+
+    prepare_runtime_index(
+        source_index_path,
+        runtime_index_path,
+        lock_directory=runtime_data_path,
+    )
+
+    retriever = PersistentChromaRetriever(
+        runtime_index_path,
+        embed_query=lambda _query: [0.1, 0.2, 0.3],
+    )
+    retriever.ensure_available()
+    evidence = retriever.retrieve("coffee beans")
+
+    assert [item.text for item in evidence] == [
+        "Coffee beans are approved for Partner orders."
+    ]
 
 
 def test_persistent_chroma_retriever_accepts_a_readable_chroma_index(tmp_path: Path):

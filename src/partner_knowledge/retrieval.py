@@ -2,6 +2,7 @@ import fcntl
 import hashlib
 import os
 import re
+import shutil
 import sqlite3
 import unicodedata
 from collections.abc import Callable, Mapping
@@ -9,6 +10,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Protocol, runtime_checkable
+from uuid import uuid4
 
 import chromadb
 from chromadb.errors import ChromaError
@@ -17,6 +19,7 @@ from src.cache import QueryEmbeddingCache
 from src.partner_knowledge.constants import DEFAULT_RELEVANCE_THRESHOLD
 from src.partner_knowledge.index_storage import (
     ACTIVATION_LOCK_NAME,
+    INDEX_LOCK_NAME,
     active_collection_name,
     partner_knowledge_index_lock,
 )
@@ -76,6 +79,99 @@ class PartnerKnowledgeIndexUnavailableError(RuntimeError):
     """Raised when the required persistent Partner knowledge index is unusable."""
 
 
+def prepare_runtime_index(
+    source_index_path: Path,
+    runtime_index_path: Path,
+    *,
+    lock_directory: Path,
+) -> None:
+    """Materialize a writable Chroma cache from the immutable source index.
+
+    This copies existing files only. It does not ingest documents or modify the
+    source index.
+    """
+    _validate_index_path(source_index_path)
+    try:
+        with partner_knowledge_index_lock(
+            source_index_path,
+            exclusive=False,
+            lock_name=INDEX_LOCK_NAME,
+            lock_directory=lock_directory,
+        ):
+            with partner_knowledge_index_lock(
+                source_index_path,
+                exclusive=True,
+                lock_name=ACTIVATION_LOCK_NAME,
+                lock_directory=lock_directory,
+            ):
+                _replace_runtime_index(source_index_path, runtime_index_path)
+    except (OSError, ValueError) as exc:
+        raise PartnerKnowledgeIndexUnavailableError(
+            "Unable to prepare the writable Partner knowledge index at "
+            f"{runtime_index_path} from {source_index_path}."
+        ) from exc
+
+
+def _validate_index_path(index_path: Path) -> None:
+    if not index_path.exists():
+        raise PartnerKnowledgeIndexUnavailableError(
+            "Partner knowledge index does not exist at "
+            f"{index_path}. Run the Partner knowledge ingestion operation "
+            "before starting the API."
+        )
+
+    if not index_path.is_dir():
+        raise PartnerKnowledgeIndexUnavailableError(
+            f"Partner knowledge index path is not a directory: {index_path}"
+        )
+
+    database_path = index_path / "chroma.sqlite3"
+    if not database_path.is_file():
+        raise PartnerKnowledgeIndexUnavailableError(
+            "Partner knowledge index is incomplete or unreadable at "
+            f"{index_path}: expected chroma.sqlite3. "
+            "Run the Partner knowledge ingestion operation before starting "
+            "the API."
+        )
+
+
+def _replace_runtime_index(source_index_path: Path, runtime_index_path: Path) -> None:
+    runtime_index_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = runtime_index_path.with_name(
+        f".{runtime_index_path.name}.tmp-{uuid4().hex}"
+    )
+    previous_path = runtime_index_path.with_name(
+        f".{runtime_index_path.name}.previous-{uuid4().hex}"
+    )
+
+    try:
+        shutil.copytree(source_index_path, temporary_path)
+        if _path_exists(runtime_index_path):
+            os.replace(runtime_index_path, previous_path)
+        try:
+            os.replace(temporary_path, runtime_index_path)
+        except OSError:
+            if _path_exists(previous_path):
+                os.replace(previous_path, runtime_index_path)
+            raise
+        _remove_path(previous_path)
+    finally:
+        _remove_path(temporary_path)
+
+
+def _path_exists(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def _remove_path(path: Path) -> None:
+    if not _path_exists(path):
+        return
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        path.unlink(missing_ok=True)
+
+
 @dataclass(frozen=True)
 class RetrievedEvidence:
     """Internal evidence selected from the Partner knowledge index."""
@@ -119,6 +215,7 @@ class PersistentChromaRetriever:
         embedding_metadata: Mapping[str, str] | None = None,
         embedding_cache_key: str | None = None,
         query_embedding_cache_path: Path | None = None,
+        lock_directory: Path | None = None,
     ):
         self._index_path = index_path
         self._embed_query = embed_query
@@ -127,6 +224,7 @@ class PersistentChromaRetriever:
         self._embedding_model = embedding_model
         self._embedding_metadata = dict(embedding_metadata or {})
         self._embedding_cache_key = embedding_cache_key or embedding_model
+        self._lock_directory = lock_directory
         self._query_embedding_cache_path = (
             query_embedding_cache_path or index_path / ".query-embedding-cache.sqlite3"
         )
@@ -140,39 +238,19 @@ class PersistentChromaRetriever:
 
     def ensure_available(self) -> None:
         self._ensure_embedding_profile()
-        self._validate_index_path()
+        _validate_index_path(self._index_path)
         try:
             with partner_knowledge_index_lock(
                 self._index_path,
                 exclusive=False,
                 lock_name=ACTIVATION_LOCK_NAME,
+                lock_directory=self._lock_directory,
             ):
                 self._ensure_collection_available()
         except (ChromaError, OSError, ValueError, sqlite3.Error) as exc:
             raise PartnerKnowledgeIndexUnavailableError(
                 f"Partner knowledge index is unreadable at {self._index_path}."
             ) from exc
-
-    def _validate_index_path(self) -> None:
-        if not self._index_path.exists():
-            raise PartnerKnowledgeIndexUnavailableError(
-                "Partner knowledge index does not exist at "
-                f"{self._index_path}. Run the Partner knowledge ingestion operation "
-                "before starting the API."
-            )
-
-        if not self._index_path.is_dir():
-            raise PartnerKnowledgeIndexUnavailableError(
-                f"Partner knowledge index path is not a directory: {self._index_path}"
-            )
-
-        database_path = self._index_path / "chroma.sqlite3"
-        if not database_path.is_file():
-            raise PartnerKnowledgeIndexUnavailableError(
-                "Partner knowledge index is incomplete or unreadable at "
-                f"{self._index_path}: expected chroma.sqlite3. "
-                "Run the Partner knowledge ingestion operation before starting the API."
-            )
 
     def _ensure_embedding_profile(self) -> None:
         if self._embed_query is None:
@@ -200,12 +278,13 @@ class PersistentChromaRetriever:
 
     def retrieve(self, query: str) -> list[RetrievedEvidence]:
         self._ensure_embedding_profile()
-        self._validate_index_path()
+        _validate_index_path(self._index_path)
         try:
             with partner_knowledge_index_lock(
                 self._index_path,
                 exclusive=False,
                 lock_name=ACTIVATION_LOCK_NAME,
+                lock_directory=self._lock_directory,
             ):
                 self._ensure_collection_available()
         except (ChromaError, OSError, ValueError, sqlite3.Error) as exc:
@@ -223,6 +302,7 @@ class PersistentChromaRetriever:
                 self._index_path,
                 exclusive=False,
                 lock_name=ACTIVATION_LOCK_NAME,
+                lock_directory=self._lock_directory,
             ):
                 self._ensure_collection_available()
                 client = chromadb.PersistentClient(path=str(self._index_path))
@@ -317,7 +397,7 @@ class PersistentChromaRetriever:
                 model=settings.embedding_model,
                 embedding_dimension=settings.embedding_dimension,
                 ledger=EmbeddingUsageLedger(
-                    self._index_path / ".cohere-embedding-usage.sqlite3",
+                    settings.embedding_usage_ledger_path,
                     monthly_limit=settings.embedding_monthly_call_limit,
                 ),
             )

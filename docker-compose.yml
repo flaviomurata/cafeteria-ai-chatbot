@@ -5,6 +5,8 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      - INDEX_VOLUME_READ_ONLY=false
     command:
       - /src/.venv/bin/python
       - -m
@@ -12,6 +14,7 @@ services:
     volumes:
       - ./media/cafeteria-documents:/src/media/cafeteria-documents:ro
       - partner-knowledge-index:/src/data/partner-knowledge-index
+      - partner-knowledge-runtime:/src/data/partner-knowledge-runtime
 
   agent-api:
     build: .
@@ -22,6 +25,7 @@ services:
     environment:
       - APP_ENV=production
       - LOG_LEVEL=INFO
+      - INDEX_VOLUME_READ_ONLY=true
     healthcheck:
       test:
         - CMD
@@ -33,9 +37,11 @@ services:
       start_period: 30s
       retries: 3
     volumes:
-      - partner-knowledge-index:/src/data/partner-knowledge-index
+      - partner-knowledge-index:/src/data/partner-knowledge-index:ro
+      - partner-knowledge-runtime:/src/data/partner-knowledge-runtime
     restart: unless-stopped
     stop_grace_period: 15s
 
 volumes:
   partner-knowledge-index:
+  partner-knowledge-runtime:
