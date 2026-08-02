@@ -21,10 +21,19 @@ from src.models import (
     SourceCitation,
 )
 from src.monitoring import MetricsCollector, RequestTimer, get_logger
+from src.partner_knowledge.cohere_embeddings import (
+    CohereEmbeddingClient,
+    CohereEmbeddingError,
+)
 from src.partner_knowledge.config import get_partner_knowledge_settings
 from src.partner_knowledge.constants import SCOPE_REFUSAL
+from src.partner_knowledge.embedding_budget import (
+    EmbeddingUsageLedger,
+    EmbeddingUsageLedgerError,
+)
 from src.partner_knowledge.grounding import DOCUMENT_CONFLICT_RESPONSE
 from src.partner_knowledge.retrieval import (
+    PartnerKnowledgeIndexUnavailableError,
     PartnerKnowledgeRetriever,
     PersistentChromaRetriever,
     RetrievedEvidence,
@@ -101,13 +110,28 @@ async def lifespan(app: FastAPI):
         app.state.evidence_verifier = LocalEvidenceVerifier()
     else:
         partner_knowledge_settings = get_partner_knowledge_settings()
+        embedding_client = CohereEmbeddingClient(
+            partner_knowledge_settings.cohere_api_key,
+            model=partner_knowledge_settings.embedding_model,
+            embedding_dimension=partner_knowledge_settings.embedding_dimension,
+            ledger=EmbeddingUsageLedger(
+                partner_knowledge_settings.embedding_usage_ledger_path,
+                monthly_limit=partner_knowledge_settings.embedding_monthly_call_limit,
+            ),
+        )
         app.state.partner_knowledge_retriever = PersistentChromaRetriever(
             partner_knowledge_settings.partner_index_path,
+            embed_query=embedding_client.embed_query,
             candidate_limit=partner_knowledge_settings.retrieval_candidate_limit,
             relevance_threshold=partner_knowledge_settings.relevance_threshold,
             embedding_model=partner_knowledge_settings.embedding_model,
             query_embedding_cache_size=(
                 partner_knowledge_settings.query_embedding_cache_size
+            ),
+            embedding_metadata=embedding_client.collection_metadata,
+            embedding_cache_key=(
+                f"cohere:{partner_knowledge_settings.embedding_model}:"
+                f"{partner_knowledge_settings.embedding_dimension}"
             ),
         )
         await run_in_threadpool(app.state.partner_knowledge_retriever.ensure_available)
@@ -241,7 +265,12 @@ async def chat(
             evidence = await run_in_threadpool(
                 partner_knowledge_retriever.retrieve, cleaned_message
             )
-        except ProviderRateLimitError as exc:
+        except (
+            CohereEmbeddingError,
+            EmbeddingUsageLedgerError,
+            PartnerKnowledgeIndexUnavailableError,
+            ProviderRateLimitError,
+        ) as exc:
             metrics.record_request(latency_ms=0, error=True)
             raise _provider_unavailable_exception(exc) from exc
         if not evidence:
@@ -373,10 +402,11 @@ async def chat(
     }
 
 
-def _provider_unavailable_exception(exc: ProviderRateLimitError) -> HTTPException:
+def _provider_unavailable_exception(exc: BaseException) -> HTTPException:
     headers = {}
-    if exc.retry_after_seconds is not None:
-        headers["Retry-After"] = str(exc.retry_after_seconds)
+    retry_after_seconds = getattr(exc, "retry_after_seconds", None)
+    if retry_after_seconds is not None:
+        headers["Retry-After"] = str(retry_after_seconds)
     return HTTPException(
         status_code=503,
         detail="The grounded answer service is temporarily unavailable.",

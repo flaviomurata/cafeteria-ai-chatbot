@@ -15,6 +15,7 @@ os.environ.update(
     {
         "APP_ENV": "test",
         "GOOGLE_API_KEY": "test-key-not-used",
+        "COHERE_API_KEY": "test-key-not-used",
         "LANGCHAIN_TRACING_V2": "false",
         "LANGSMITH_TRACING": "false",
         "LANGCHAIN_API_KEY": "",
@@ -62,9 +63,9 @@ STATE_ATTRS = (
 class FakeAgent:
     """Stand-in for `ProductionAgent`.
 
-    The agent is the only component that reaches an external service (Gemini),
-    so it is the only one replaced. Security, cache, and metrics are exercised
-    for real.
+    The production agent and Partner knowledge retriever reach external
+    providers, so both are replaced. Security, cache, and metrics are
+    exercised for real.
     """
 
     def __init__(

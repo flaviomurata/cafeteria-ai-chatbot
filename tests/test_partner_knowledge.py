@@ -1,11 +1,15 @@
 import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import chromadb
 import pytest
+from pydantic import ValidationError
 
 from src.main import app
 from src.partner_knowledge.config import PartnerKnowledgeSettings
+from src.partner_knowledge.index_storage import active_collection_name
 from src.partner_knowledge.retrieval import (
     PartnerKnowledgeIndexUnavailableError,
     PersistentChromaRetriever,
@@ -13,7 +17,7 @@ from src.partner_knowledge.retrieval import (
 
 
 def _embed_documents(documents: list[str]) -> list[list[float]]:
-    """Deterministic embeddings keep ingestion tests independent of Gemini."""
+    """Deterministic embeddings keep ingestion tests independent of providers."""
     return [[float(len(document)), 0.0, 1.0] for document in documents]
 
 
@@ -21,14 +25,13 @@ def test_partner_knowledge_settings_accept_configured_retrieval_values(tmp_path:
     settings = PartnerKnowledgeSettings(
         partner_document_source=tmp_path / "documents",
         partner_index_path=tmp_path / "index",
-        embedding_model="test-embedding-model",
         retrieval_candidate_limit=7,
         relevance_threshold=0.83,
     )
 
     assert settings.partner_document_source == tmp_path / "documents"
     assert settings.partner_index_path == tmp_path / "index"
-    assert settings.embedding_model == "test-embedding-model"
+    assert settings.embedding_model == "embed-v4.0"
     assert settings.retrieval_candidate_limit == 7
     assert settings.relevance_threshold == 0.83
 
@@ -36,23 +39,48 @@ def test_partner_knowledge_settings_accept_configured_retrieval_values(tmp_path:
 def test_partner_knowledge_settings_use_a_domain_environment_prefix(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("PARTNER_KNOWLEDGE_EMBEDDING_MODEL", "test-embedding-model")
+    monkeypatch.setenv("PARTNER_KNOWLEDGE_RELEVANCE_THRESHOLD", "0.91")
 
     settings = PartnerKnowledgeSettings(_env_file=None)
 
-    assert settings.embedding_model == "test-embedding-model"
+    assert settings.relevance_threshold == 0.91
 
 
-def test_partner_knowledge_settings_default_to_free_text_embeddings(
+def test_partner_knowledge_settings_reject_legacy_gemini_embedding_model(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("PARTNER_KNOWLEDGE_EMBEDDING_MODEL", "gemini-embedding-001")
+
+    with pytest.raises(ValidationError, match="embed-v4.0"):
+        PartnerKnowledgeSettings(_env_file=None)
+
+
+def test_partner_knowledge_settings_default_to_cohere_embeddings(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.delenv("PARTNER_KNOWLEDGE_EMBEDDING_MODEL", raising=False)
     monkeypatch.delenv("PARTNER_KNOWLEDGE_QUERY_EMBEDDING_CACHE_SIZE", raising=False)
+    monkeypatch.delenv("COHERE_API_KEY", raising=False)
+    monkeypatch.delenv("CO_API_KEY", raising=False)
 
     settings = PartnerKnowledgeSettings(_env_file=None)
 
-    assert settings.embedding_model == "gemini-embedding-001"
-    assert settings.query_embedding_cache_size == 128
+    assert settings.embedding_model == "embed-v4.0"
+    assert settings.query_embedding_cache_size == 1024
+    assert settings.cohere_api_key == ""
+
+
+def test_partner_knowledge_settings_accepts_cohere_api_key_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("COHERE_API_KEY", "canonical-key")
+    settings = PartnerKnowledgeSettings(_env_file=None)
+    assert settings.cohere_api_key == "canonical-key"
+
+    monkeypatch.delenv("COHERE_API_KEY")
+    monkeypatch.setenv("CO_API_KEY", "sdk-key")
+    settings = PartnerKnowledgeSettings(_env_file=None)
+    assert settings.cohere_api_key == "sdk-key"
 
 
 def test_persistent_chroma_retriever_rejects_a_missing_index(tmp_path: Path):
@@ -65,7 +93,10 @@ def test_persistent_chroma_retriever_rejects_a_missing_index(tmp_path: Path):
 def test_persistent_chroma_retriever_rejects_an_incomplete_index(tmp_path: Path):
     index_path = tmp_path / "index"
     index_path.mkdir()
-    retriever = PersistentChromaRetriever(index_path)
+    retriever = PersistentChromaRetriever(
+        index_path,
+        embed_query=lambda _query: [0.1, 0.2, 0.3],
+    )
 
     with pytest.raises(PartnerKnowledgeIndexUnavailableError, match="chroma.sqlite3"):
         retriever.ensure_available()
@@ -81,7 +112,10 @@ def test_persistent_chroma_retriever_accepts_a_readable_chroma_index(tmp_path: P
         documents=["Coffee beans are approved for Partner orders."],
         embeddings=[[0.1, 0.2, 0.3]],
     )
-    retriever = PersistentChromaRetriever(index_path)
+    retriever = PersistentChromaRetriever(
+        index_path,
+        embed_query=lambda _query: [0.1, 0.2, 0.3],
+    )
 
     retriever.ensure_available()
 
@@ -97,6 +131,50 @@ def test_persistent_chroma_retriever_rejects_an_empty_index(tmp_path: Path):
         PartnerKnowledgeIndexUnavailableError, match="no indexed records"
     ):
         retriever.ensure_available()
+
+
+def test_persistent_chroma_retriever_rejects_a_legacy_embedding_index(
+    tmp_path: Path,
+):
+    index_path = tmp_path / "index"
+    collection = chromadb.PersistentClient(
+        path=str(index_path)
+    ).get_or_create_collection("partner_knowledge")
+    collection.add(
+        ids=["legacy-1"],
+        documents=["Legacy embedding record."],
+        embeddings=[[0.1, 0.2, 0.3]],
+    )
+    retriever = PersistentChromaRetriever(
+        index_path,
+        embedding_metadata={
+            "embedding_provider": "cohere",
+            "embedding_model": "embed-v4.0",
+            "embedding_dimension": "3",
+        },
+    )
+
+    with pytest.raises(
+        PartnerKnowledgeIndexUnavailableError, match="embedding configuration"
+    ):
+        retriever.ensure_available()
+
+
+def test_lazy_retriever_rejects_a_legacy_embedding_index(tmp_path: Path):
+    index_path = tmp_path / "index"
+    collection = chromadb.PersistentClient(
+        path=str(index_path)
+    ).get_or_create_collection("partner_knowledge")
+    collection.add(
+        ids=["legacy-1"],
+        documents=["Legacy embedding record."],
+        embeddings=[[0.1, 0.2, 0.3]],
+    )
+
+    with pytest.raises(
+        PartnerKnowledgeIndexUnavailableError, match="embedding configuration"
+    ):
+        PersistentChromaRetriever(index_path).ensure_available()
 
 
 def test_persistent_chroma_retriever_returns_only_relevant_citation_ready_evidence(
@@ -181,6 +259,56 @@ def test_persistent_chroma_retriever_caches_normalized_query_embeddings(
     assert len(calls) == 1
 
 
+def test_persistent_chroma_retriever_single_flights_concurrent_cache_misses(
+    tmp_path: Path,
+):
+    index_path = tmp_path / "index"
+    collection = chromadb.PersistentClient(
+        path=str(index_path)
+    ).get_or_create_collection("partner_knowledge", metadata={"hnsw:space": "cosine"})
+    collection.add(
+        ids=["catalog-1"],
+        documents=["Café coado usa grãos Arábica."],
+        metadatas=[
+            {
+                "document_name": "Catálogo de Produtos e Ingredientes — Café Aurora",
+                "location": "Página 2",
+                "technical_location": "page:2",
+            }
+        ],
+        embeddings=[[1.0, 0.0]],
+    )
+    entered = threading.Event()
+    release = threading.Event()
+    calls = 0
+    calls_lock = threading.Lock()
+
+    def embed_query(_query: str) -> list[float]:
+        nonlocal calls
+        with calls_lock:
+            calls += 1
+        entered.set()
+        assert release.wait(timeout=2)
+        return [1.0, 0.0]
+
+    retriever = PersistentChromaRetriever(
+        index_path,
+        embed_query=embed_query,
+        candidate_limit=1,
+        relevance_threshold=0.75,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(retriever.retrieve, "same question")
+        assert entered.wait(timeout=2)
+        second = executor.submit(retriever.retrieve, "same question")
+        release.set()
+        assert first.result()
+        assert second.result()
+
+    assert calls == 1
+
+
 def test_persistent_chroma_retriever_rejects_an_invalid_chroma_database(
     tmp_path: Path,
 ):
@@ -199,7 +327,10 @@ async def test_api_startup_fails_when_the_partner_knowledge_index_is_missing(
 ):
     from src import main
 
-    settings = PartnerKnowledgeSettings(partner_index_path=tmp_path / "missing-index")
+    settings = PartnerKnowledgeSettings(
+        partner_index_path=tmp_path / "missing-index",
+        cohere_api_key="test-key-not-used",
+    )
     monkeypatch.setattr(main, "get_partner_knowledge_settings", lambda: settings)
 
     with pytest.raises(PartnerKnowledgeIndexUnavailableError, match="does not exist"):
@@ -225,7 +356,7 @@ def test_ingestion_builds_citation_ready_index_from_only_approved_sources(
     ).ingest()
 
     collection = chromadb.PersistentClient(path=str(index_path)).get_collection(
-        "partner_knowledge"
+        active_collection_name(index_path)
     )
     records = collection.get(include=["documents", "metadatas"])
     document_names = {metadata["document_name"] for metadata in records["metadatas"]}
@@ -279,13 +410,63 @@ def test_ingestion_replaces_stale_chunks_when_rebuilt(tmp_path: Path):
 
     records = (
         chromadb.PersistentClient(path=str(settings.partner_index_path))
-        .get_collection("partner_knowledge")
+        .get_collection(active_collection_name(settings.partner_index_path))
         .get(include=["documents"])
     )
 
     assert len(records["ids"]) == 1
     assert "ING-NEW" in records["documents"][0]
     assert "ING-OLD" not in records["documents"][0]
+
+
+def test_ingestion_skips_an_unchanged_cohere_index(tmp_path: Path):
+    from src.partner_knowledge.ingestion import PartnerKnowledgeIngestor
+
+    source_path = tmp_path / "documents"
+    source_path.mkdir()
+    (source_path / "CA-COM-PLA-001_Controle_de_Estoque.csv").write_text(
+        "Código da unidade,Código do item,Descrição\nCA-TEST-01,ING-001,Item atual\n",
+        encoding="utf-8",
+    )
+    settings = PartnerKnowledgeSettings(
+        partner_document_source=source_path,
+        partner_index_path=tmp_path / "index",
+    )
+    embedding_metadata = {
+        "embedding_provider": "cohere",
+        "embedding_model": "embed-v4.0",
+        "embedding_dimension": "3",
+        "embedding_document_input_type": "search_document",
+        "embedding_query_input_type": "search_query",
+    }
+    calls = 0
+
+    def embed_documents(documents: list[str]) -> list[list[float]]:
+        nonlocal calls
+        calls += 1
+        return _embed_documents(documents)
+
+    ingestor = PartnerKnowledgeIngestor(
+        settings,
+        embed_documents=embed_documents,
+        embedding_metadata=embedding_metadata,
+    )
+
+    first_result = ingestor.ingest()
+    second_result = ingestor.ingest()
+
+    assert first_result.skipped is False
+    assert second_result.skipped is True
+    assert calls == 1
+    metadata = (
+        chromadb.PersistentClient(path=str(settings.partner_index_path))
+        .get_collection(active_collection_name(settings.partner_index_path))
+        .metadata
+    )
+    assert metadata["embedding_provider"] == "cohere"
+    assert metadata["embedding_model"] == "embed-v4.0"
+    assert metadata["embedding_dimension"] == "3"
+    assert metadata["source_fingerprint"]
 
 
 def test_failed_rebuild_leaves_the_current_index_usable(tmp_path: Path):
@@ -314,13 +495,69 @@ def test_failed_rebuild_leaves_the_current_index_usable(tmp_path: Path):
 
     records = (
         chromadb.PersistentClient(path=str(settings.partner_index_path))
-        .get_collection("partner_knowledge")
+        .get_collection(active_collection_name(settings.partner_index_path))
         .get(include=["documents"])
     )
 
     assert records["documents"] == [
         "Código da unidade: CA-TEST-01\nCódigo do item: ING-OLD\nDescrição: Item antigo"
     ]
+
+
+def test_failed_activation_leaves_the_previous_index_selected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from src.partner_knowledge.ingestion import (
+        PartnerKnowledgeIngestionError,
+        PartnerKnowledgeIngestor,
+    )
+
+    source_path = tmp_path / "documents"
+    source_path.mkdir()
+    inventory_path = source_path / "CA-COM-PLA-001_Controle_de_Estoque.csv"
+    inventory_path.write_text(
+        "Código da unidade,Código do item,Descrição\nCA-TEST-01,ING-OLD,Item antigo\n",
+        encoding="utf-8",
+    )
+    settings = PartnerKnowledgeSettings(
+        partner_document_source=source_path,
+        partner_index_path=tmp_path / "index",
+    )
+    embedding_metadata = {
+        "embedding_provider": "cohere",
+        "embedding_model": "embed-v4.0",
+        "embedding_dimension": "3",
+    }
+    ingestor = PartnerKnowledgeIngestor(
+        settings,
+        embed_documents=_embed_documents,
+        embedding_metadata=embedding_metadata,
+    )
+    ingestor.ingest()
+    previous_collection = active_collection_name(settings.partner_index_path)
+
+    inventory_path.write_text(
+        "Código da unidade,Código do item,Descrição\nCA-TEST-01,ING-NEW,Item atual\n",
+        encoding="utf-8",
+    )
+
+    def fail_activation(*_args, **_kwargs):
+        raise OSError("simulated pointer failure")
+
+    monkeypatch.setattr(
+        "src.partner_knowledge.ingestion.activate_collection", fail_activation
+    )
+
+    with pytest.raises(PartnerKnowledgeIngestionError, match="activate"):
+        ingestor.ingest()
+
+    assert active_collection_name(settings.partner_index_path) == previous_collection
+    records = (
+        chromadb.PersistentClient(path=str(settings.partner_index_path))
+        .get_collection(previous_collection)
+        .get(include=["documents"])
+    )
+    assert "ING-OLD" in records["documents"][0]
 
 
 def test_ingestion_rejects_a_pdf_without_native_text(tmp_path: Path):

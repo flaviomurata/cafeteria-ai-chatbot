@@ -2,6 +2,7 @@
 
 import math
 import re
+import time
 from collections.abc import Iterator
 
 
@@ -42,6 +43,11 @@ def provider_rate_limit_error(
     )
 
 
+def provider_retry_after_seconds(exc: BaseException) -> int | None:
+    """Return a provider-supplied retry delay when one is available."""
+    return _retry_after_seconds(exc)
+
+
 def _exception_chain(exc: BaseException) -> Iterator[BaseException]:
     current: BaseException | None = exc
     seen: set[int] = set()
@@ -52,8 +58,45 @@ def _exception_chain(exc: BaseException) -> Iterator[BaseException]:
 
 
 def _retry_after_seconds(exc: BaseException) -> int | None:
+    for current in _exception_chain(exc):
+        headers = getattr(current, "headers", None)
+        if headers is None:
+            headers = getattr(getattr(current, "response", None), "headers", None)
+        if not headers:
+            continue
+        retry_after_ms = _header_value(headers, "retry-after-ms")
+        if retry_after_ms is not None:
+            try:
+                return max(1, math.ceil(float(retry_after_ms) / 1000))
+            except (TypeError, ValueError):
+                pass
+        retry_after = _header_value(headers, "retry-after")
+        if retry_after is not None:
+            try:
+                return max(1, math.ceil(float(retry_after)))
+            except (TypeError, ValueError):
+                pass
+        reset = _header_value(headers, "x-ratelimit-reset")
+        if reset is not None:
+            try:
+                reset_value = float(reset)
+                delay = (
+                    reset_value - time.time()
+                    if reset_value > time.time()
+                    else reset_value
+                )
+                return max(1, math.ceil(delay))
+            except (TypeError, ValueError):
+                pass
     details = " ".join(str(item) for item in _exception_chain(exc))
     match = re.search(r"retry in\s+(\d+(?:\.\d+)?)s", details, re.IGNORECASE)
     if match is None:
         return None
     return max(1, math.ceil(float(match.group(1))))
+
+
+def _header_value(headers, name: str):
+    for key, value in headers.items():
+        if str(key).lower() == name:
+            return value
+    return None

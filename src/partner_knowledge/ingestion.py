@@ -3,7 +3,9 @@
 import csv
 import hashlib
 import json
-from collections.abc import Callable, Iterable
+import logging
+import sqlite3
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,14 +19,33 @@ from docx.opc.exceptions import PackageNotFoundError
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
-from src.config import get_settings
+from src.partner_knowledge.cohere_embeddings import (
+    CohereEmbeddingClient,
+    CohereEmbeddingConfigurationError,
+    CohereEmbeddingError,
+)
 from src.partner_knowledge.config import (
     PartnerKnowledgeSettings,
     get_partner_knowledge_settings,
 )
+from src.partner_knowledge.embedding_budget import (
+    EmbeddingUsageLedger,
+    EmbeddingUsageLedgerError,
+)
+from src.partner_knowledge.index_storage import (
+    ACTIVATION_LOCK_NAME,
+    COLLECTION_NAME,
+    INDEX_LOCK_NAME,
+    STAGING_COLLECTION_PREFIX,
+    PartnerKnowledgeIndexLockError,
+    activate_collection,
+    active_collection_name,
+    partner_knowledge_index_lock,
+)
+from src.provider_errors import ProviderRateLimitError
 
-_COLLECTION_NAME = "partner_knowledge"
-_STAGING_COLLECTION_PREFIX = "partner_knowledge_staging_"
+_SOURCE_FINGERPRINT_KEY = "source_fingerprint"
+logger = logging.getLogger(__name__)
 _APPROVED_SOURCES = {
     "Catálogo de Produtos e Ingredientes — Café Aurora.pdf": (
         "Catálogo de Produtos e Ingredientes — Café Aurora",
@@ -58,6 +79,7 @@ class PartnerKnowledgeIngestionError(RuntimeError):
 class IngestionResult:
     indexed_chunks: int
     index_path: Path
+    skipped: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,19 +113,90 @@ class PartnerKnowledgeIngestor:
         settings: PartnerKnowledgeSettings,
         *,
         embed_documents: Callable[[list[str]], list[list[float]]],
+        embedding_metadata: Mapping[str, str] | None = None,
     ):
         self._settings = settings
         self._embed_documents = embed_documents
+        self._embedding_metadata = dict(embedding_metadata or {})
 
     def ingest(self) -> IngestionResult:
+        try:
+            self._settings.partner_index_path.mkdir(parents=True, exist_ok=True)
+            with partner_knowledge_index_lock(
+                self._settings.partner_index_path,
+                exclusive=True,
+                non_blocking=True,
+                lock_name=INDEX_LOCK_NAME,
+            ):
+                return self._ingest_locked()
+        except BlockingIOError as exc:
+            raise PartnerKnowledgeIngestionError(
+                "Another Partner knowledge ingestion operation is already running."
+            ) from exc
+        except PartnerKnowledgeIndexLockError as exc:
+            raise PartnerKnowledgeIngestionError(
+                "Unable to open the Partner knowledge ingestion lock at "
+                f"{self._settings.partner_index_path}."
+            ) from exc
+        except OSError as exc:
+            raise PartnerKnowledgeIngestionError(
+                "Unable to access the Partner knowledge index at "
+                f"{self._settings.partner_index_path}."
+            ) from exc
+
+    def _ingest_locked(self) -> IngestionResult:
         chunks = list(self._load_approved_chunks())
         if not chunks:
             raise PartnerKnowledgeIngestionError(
                 "No approved Partner knowledge documents were found in "
                 f"{self._settings.partner_document_source}."
             )
+        fingerprint = _source_fingerprint(chunks, self._embedding_metadata)
+        try:
+            client = chromadb.PersistentClient(
+                path=str(self._settings.partner_index_path)
+            )
+        except (ChromaError, OSError, ValueError, sqlite3.Error) as exc:
+            raise PartnerKnowledgeIngestionError(
+                "Unable to open the Partner knowledge index at "
+                f"{self._settings.partner_index_path}."
+            ) from exc
+        expected_metadata = {
+            **self._embedding_metadata,
+            _SOURCE_FINGERPRINT_KEY: fingerprint,
+        }
+        if self._embedding_metadata:
+            try:
+                index_is_current = _active_index_is_current(
+                    client,
+                    index_path=self._settings.partner_index_path,
+                    expected_metadata=expected_metadata,
+                    expected_chunk_count=len(chunks),
+                )
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                raise PartnerKnowledgeIngestionError(
+                    "The active Partner knowledge index pointer is unreadable at "
+                    f"{self._settings.partner_index_path}."
+                ) from exc
+            if index_is_current:
+                return IngestionResult(
+                    indexed_chunks=len(chunks),
+                    index_path=self._settings.partner_index_path,
+                    skipped=True,
+                )
         try:
             embeddings = self._embed_documents([chunk.text for chunk in chunks])
+        except (
+            EmbeddingUsageLedgerError,
+            ProviderRateLimitError,
+        ) as exc:
+            raise PartnerKnowledgeIngestionError(str(exc)) from exc
+        except CohereEmbeddingConfigurationError as exc:
+            raise PartnerKnowledgeIngestionError(str(exc)) from exc
+        except CohereEmbeddingError as exc:
+            raise PartnerKnowledgeIngestionError(
+                "Unable to create embeddings for Partner knowledge."
+            ) from exc
         except Exception as exc:
             raise PartnerKnowledgeIngestionError(
                 "Unable to create embeddings for Partner knowledge."
@@ -113,17 +206,17 @@ class PartnerKnowledgeIngestor:
                 "Embedding provider returned a different number of vectors "
                 "than documents."
             )
-        self._settings.partner_index_path.mkdir(parents=True, exist_ok=True)
-        staging_name = f"{_STAGING_COLLECTION_PREFIX}{uuid4().hex}"
-        client = None
+
+        staging_name = f"{STAGING_COLLECTION_PREFIX}{uuid4().hex}"
+        collection_metadata = {
+            "hnsw:space": "cosine",
+            **expected_metadata,
+        }
         try:
-            client = chromadb.PersistentClient(
-                path=str(self._settings.partner_index_path)
-            )
             collection = client.create_collection(
                 staging_name,
                 embedding_function=None,
-                metadata={"hnsw:space": "cosine"},
+                metadata=collection_metadata,
             )
             collection.add(
                 ids=[chunk.id for chunk in chunks],
@@ -131,27 +224,47 @@ class PartnerKnowledgeIngestor:
                 metadatas=[chunk.metadata for chunk in chunks],
                 embeddings=embeddings,
             )
-        except (ChromaError, OSError, ValueError) as exc:
-            if client is not None:
-                try:
-                    client.delete_collection(staging_name)
-                except ChromaError:
-                    pass
+            if collection.count() != len(chunks):
+                raise ValueError(
+                    "Staged collection contains an unexpected record count."
+                )
+        except (ChromaError, OSError, ValueError, sqlite3.Error) as exc:
+            try:
+                client.delete_collection(staging_name)
+            except (ChromaError, OSError, sqlite3.Error):
+                pass
             raise PartnerKnowledgeIngestionError(
                 "Unable to write the Partner knowledge index at "
                 f"{self._settings.partner_index_path}."
             ) from exc
+        activation_committed = False
         try:
-            try:
-                client.delete_collection(_COLLECTION_NAME)
-            except ChromaError:
-                pass
-            collection.modify(name=_COLLECTION_NAME)
-        except ChromaError as exc:
-            raise PartnerKnowledgeIngestionError(
-                "Unable to activate the rebuilt Partner knowledge index at "
-                f"{self._settings.partner_index_path}."
-            ) from exc
+            with partner_knowledge_index_lock(
+                self._settings.partner_index_path,
+                exclusive=True,
+                lock_name=ACTIVATION_LOCK_NAME,
+            ):
+                activate_collection(self._settings.partner_index_path, staging_name)
+                activation_committed = True
+                _garbage_collect_collections(
+                    client, active_collection_name=staging_name
+                )
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            if activation_committed:
+                logger.warning(
+                    "Partner knowledge activation committed with a cleanup or "
+                    "lock-finalization issue",
+                    extra={"extra_data": {"error": str(exc)}},
+                )
+            else:
+                try:
+                    client.delete_collection(staging_name)
+                except (ChromaError, OSError, sqlite3.Error):
+                    pass
+                raise PartnerKnowledgeIngestionError(
+                    "Unable to activate the rebuilt Partner knowledge index at "
+                    f"{self._settings.partner_index_path}."
+                ) from exc
         return IngestionResult(
             indexed_chunks=len(chunks), index_path=self._settings.partner_index_path
         )
@@ -312,20 +425,98 @@ class PartnerKnowledgeIngestor:
             )
 
 
-def main() -> None:
-    """Run explicit local ingestion with Gemini document embeddings."""
-    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+def _source_fingerprint(
+    chunks: list[_Chunk], embedding_metadata: Mapping[str, str]
+) -> str:
+    payload = {
+        "chunk_ids": [chunk.id for chunk in chunks],
+        "embedding_metadata": dict(sorted(embedding_metadata.items())),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
+
+def _active_index_is_current(
+    client: Any,
+    *,
+    index_path: Path,
+    expected_metadata: Mapping[str, str],
+    expected_chunk_count: int,
+) -> bool:
+    collection_name = active_collection_name(index_path)
+    try:
+        collection = client.get_collection(collection_name)
+        if collection.count() != expected_chunk_count:
+            return False
+        metadata = collection.metadata or {}
+    except (ChromaError, OSError, ValueError, sqlite3.Error):
+        return False
+    return all(
+        str(metadata.get(key)) == value for key, value in expected_metadata.items()
+    )
+
+
+def _garbage_collect_collections(client: Any, *, active_collection_name: str) -> None:
+    try:
+        collections = client.list_collections()
+    except (ChromaError, OSError, ValueError, sqlite3.Error) as exc:
+        logger.warning(
+            "Unable to inspect stale Partner knowledge collections after activation",
+            extra={"extra_data": {"error": str(exc)}},
+        )
+        return
+    for collection in collections:
+        collection_name = collection.name
+        if collection_name == active_collection_name or not (
+            collection_name == COLLECTION_NAME
+            or collection_name.startswith(STAGING_COLLECTION_PREFIX)
+        ):
+            continue
+        try:
+            client.delete_collection(collection_name)
+        except (ChromaError, OSError, ValueError, sqlite3.Error) as exc:
+            logger.warning(
+                "Unable to remove stale Partner knowledge collection",
+                extra={
+                    "extra_data": {
+                        "collection_name": collection_name,
+                        "error": str(exc),
+                    }
+                },
+            )
+
+
+def main() -> None:
+    """Run explicit local ingestion with Cohere document embeddings."""
     settings = get_partner_knowledge_settings()
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model=settings.embedding_model, google_api_key=get_settings().google_api_key
+    ledger = EmbeddingUsageLedger(
+        settings.embedding_usage_ledger_path,
+        monthly_limit=settings.embedding_monthly_call_limit,
+    )
+    embeddings = CohereEmbeddingClient(
+        settings.cohere_api_key,
+        model=settings.embedding_model,
+        embedding_dimension=settings.embedding_dimension,
+        ledger=ledger,
     )
     result = PartnerKnowledgeIngestor(
-        settings, embed_documents=embeddings.embed_documents
+        settings,
+        embed_documents=embeddings.embed_documents,
+        embedding_metadata=embeddings.collection_metadata,
     ).ingest()
+    usage = embeddings.usage_snapshot()
+    operation = "Index already current" if result.skipped else "Indexed"
+    projected_calls = (
+        0
+        if result.skipped
+        else embeddings.projected_document_calls(result.indexed_chunks)
+    )
     print(
-        "Indexed "
-        f"{result.indexed_chunks} Partner knowledge chunks at {result.index_path}"
+        f"{operation} {result.indexed_chunks} Partner knowledge chunks at "
+        f"{result.index_path}. Projected Embed calls: {projected_calls}. "
+        f"UTC-month usage: {usage.used_calls}/"
+        f"{settings.embedding_monthly_call_limit} used; "
+        f"{usage.remaining_calls} remaining."
     )
 
 

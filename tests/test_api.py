@@ -14,9 +14,14 @@ from httpx import AsyncClient
 from src.cache import CachedChatResponse, ResponseCache
 from src.main import app, get_partner_knowledge_retriever
 from src.monitoring import MetricsCollector
+from src.partner_knowledge.cohere_embeddings import CohereEmbeddingError
 from src.partner_knowledge.constants import SCOPE_REFUSAL
 from src.partner_knowledge.grounding import DOCUMENT_CONFLICT_RESPONSE
-from src.partner_knowledge.retrieval import PersistentChromaRetriever, RetrievedEvidence
+from src.partner_knowledge.retrieval import (
+    PartnerKnowledgeIndexUnavailableError,
+    PersistentChromaRetriever,
+    RetrievedEvidence,
+)
 from src.partner_knowledge.verification import VerificationResult
 from src.provider_errors import ProviderRateLimitError
 from tests.conftest import DEFAULT_AGENT_RESPONSE, RATE_LIMIT_PER_MINUTE, FakeAgent
@@ -809,7 +814,7 @@ async def test_chat_returns_503_and_retry_guidance_when_embedding_quota_is_exhau
     monkeypatch: pytest.MonkeyPatch,
 ):
     def retrieve(_query: str):
-        raise ProviderRateLimitError("Google embeddings", retry_after_seconds=11)
+        raise ProviderRateLimitError("Cohere embeddings", retry_after_seconds=11)
 
     monkeypatch.setattr(partner_knowledge_retriever, "retrieve", retrieve)
 
@@ -820,6 +825,46 @@ async def test_chat_returns_503_and_retry_guidance_when_embedding_quota_is_exhau
         "detail": "The grounded answer service is temporarily unavailable."
     }
     assert resp.headers["retry-after"] == "11"
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_503_when_cohere_embedding_service_is_unavailable(
+    client: AsyncClient,
+    partner_knowledge_retriever,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def retrieve(_query: str):
+        raise CohereEmbeddingError("cohere key must not reach the public response")
+
+    monkeypatch.setattr(partner_knowledge_retriever, "retrieve", retrieve)
+
+    resp = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
+
+    assert resp.status_code == 503
+    assert resp.json() == {
+        "detail": "The grounded answer service is temporarily unavailable."
+    }
+    assert "cohere key" not in resp.text
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_503_when_partner_index_storage_is_unavailable(
+    client: AsyncClient,
+    partner_knowledge_retriever,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def retrieve(_query: str):
+        raise PartnerKnowledgeIndexUnavailableError("index path must not leak")
+
+    monkeypatch.setattr(partner_knowledge_retriever, "retrieve", retrieve)
+
+    resp = await client.post(CHAT_URL, json={"message": "What is for lunch?"})
+
+    assert resp.status_code == 503
+    assert resp.json() == {
+        "detail": "The grounded answer service is temporarily unavailable."
+    }
+    assert "index path" not in resp.text
 
 
 @pytest.mark.asyncio
