@@ -5,9 +5,9 @@ default:
 build:
   docker compose build
 
-# One-time/bootstrap index construction. Automatic source-update detection is out of scope.
+# Rebuild the image so ingestion always uses the checked-out implementation.
 ingest:
-  docker compose run --rm ingest-partner-knowledge
+  docker compose run --build --rm ingest-partner-knowledge
 
 start:
   docker compose up --detach --remove-orphans agent-api
