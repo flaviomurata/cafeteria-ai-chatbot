@@ -209,6 +209,7 @@ node_modules/
 apps/web/dist/
 apps/api/data/partner-knowledge-index/
 apps/api/data/partner-knowledge-runtime/
+docs/grounded-response-evaluation.md
 
 # PyPI configuration file
 .pypirc
