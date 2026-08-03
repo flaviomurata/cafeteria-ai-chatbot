@@ -10,18 +10,18 @@ ENV PYTHONUNBUFFERED=1 \
 # uv from its official image, pinned by digest for reproducible builds.
 COPY --from=ghcr.io/astral-sh/uv@sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105 /uv /bin/uv
 
-WORKDIR /src
+WORKDIR /app
 
 # Prepare the runtime user and the persistent mount targets. Fresh named volumes
 # inherit the mount target's ownership; existing volumes are repaired by the entrypoint.
 RUN useradd --create-home appuser \
-    && mkdir -p /src/data/partner-knowledge-index /src/data/partner-knowledge-runtime \
-    && chown -R appuser:appuser /src
+    && mkdir -p /app/data/partner-knowledge-index /app/data/partner-knowledge-runtime \
+    && chown -R appuser:appuser /app
 
-COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --chmod=755 apps/api/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Dependency manifests first, for Docker layer caching
-COPY --chown=appuser:appuser pyproject.toml uv.lock ./
+COPY --chown=appuser:appuser apps/api/pyproject.toml apps/api/uv.lock ./
 
 USER appuser
 
@@ -29,7 +29,7 @@ USER appuser
 RUN uv sync --frozen --no-dev
 
 # Application code
-COPY --chown=appuser:appuser src/ src/
+COPY --chown=appuser:appuser apps/api/src/ src/
 
 EXPOSE 8000
 
@@ -40,4 +40,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Run uvicorn straight from the venv, avoiding a uv re-sync at runtime
 USER root
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["/src/.venv/bin/uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/.venv/bin/uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

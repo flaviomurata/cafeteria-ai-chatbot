@@ -1,13 +1,12 @@
-.venv/
 .git/
 .github/
+.venv/
 .pytest_cache/
 .ruff_cache/
 __pycache__/
 *.pyc
 .env
 .scratch/
+apps/web/
+apps/api/tests/
 docs/
-tests/
-Dockerfile
-docker-compose.yml

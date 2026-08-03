@@ -2,22 +2,26 @@
 
 services:
   ingest-partner-knowledge:
-    build: .
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     env_file:
       - .env
     environment:
       - INDEX_VOLUME_READ_ONLY=false
     command:
-      - /src/.venv/bin/python
+      - /app/.venv/bin/python
       - -m
       - src.partner_knowledge.ingestion
     volumes:
-      - ./media/cafeteria-documents:/src/media/cafeteria-documents:ro
-      - partner-knowledge-index:/src/data/partner-knowledge-index
-      - partner-knowledge-runtime:/src/data/partner-knowledge-runtime
+      - ./apps/api/media/cafeteria-documents:/app/media/cafeteria-documents:ro
+      - partner-knowledge-index:/app/data/partner-knowledge-index
+      - partner-knowledge-runtime:/app/data/partner-knowledge-runtime
 
   agent-api:
-    build: .
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     ports:
       - '8000:8000'
     env_file:
@@ -37,10 +41,19 @@ services:
       start_period: 30s
       retries: 3
     volumes:
-      - partner-knowledge-index:/src/data/partner-knowledge-index:ro
-      - partner-knowledge-runtime:/src/data/partner-knowledge-runtime
+      - partner-knowledge-index:/app/data/partner-knowledge-index:ro
+      - partner-knowledge-runtime:/app/data/partner-knowledge-runtime
     restart: unless-stopped
     stop_grace_period: 15s
+
+  web:
+    build: ./apps/web
+    ports:
+      - '3000:80'
+    depends_on:
+      agent-api:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   partner-knowledge-index:

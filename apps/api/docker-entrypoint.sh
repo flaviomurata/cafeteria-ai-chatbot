@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-INDEX_VOLUME_PATH=/src/data/partner-knowledge-index
-RUNTIME_DATA_PATH=/src/data/partner-knowledge-runtime
+INDEX_VOLUME_PATH=/app/data/partner-knowledge-index
+RUNTIME_DATA_PATH=/app/data/partner-knowledge-runtime
 APP_USER=appuser
 INDEX_VOLUME_READ_ONLY="${INDEX_VOLUME_READ_ONLY:-true}"
 

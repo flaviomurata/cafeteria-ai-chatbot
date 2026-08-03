@@ -205,6 +205,10 @@ tempCodeRunnerFile.py
 
 # Ruff stuff:
 .ruff_cache/
+node_modules/
+apps/web/dist/
+apps/api/data/partner-knowledge-index/
+apps/api/data/partner-knowledge-runtime/
 
 # PyPI configuration file
 .pypirc
