@@ -1,4 +1,4 @@
-name: Python Linting
+name: Quality checks
 
 on:
  push:
@@ -7,7 +7,8 @@ on:
    branches: [ main ]
 
 jobs:
- lint:
+ api-lint:
+   name: API lint
    runs-on: ubuntu-latest
    steps:
      - uses: actions/checkout@v4
@@ -18,10 +19,34 @@ jobs:
          python-version: '3.13'
 
      - name: Install dependencies
+       working-directory: apps/api
        run: uv sync --all-groups
 
      - name: Check formatting with ruff
-       run: uv run ruff format --check src
+       working-directory: apps/api
+       run: uv run ruff format --check src tests
 
      - name: Lint with ruff
-       run: uv run ruff check src
+       working-directory: apps/api
+       run: uv run ruff check src tests
+
+ web-build:
+   name: Web build
+   runs-on: ubuntu-latest
+   steps:
+     - uses: actions/checkout@v4
+
+     - name: Set up Node.js
+       uses: actions/setup-node@v4
+       with:
+         node-version: '22'
+         cache: npm
+         cache-dependency-path: apps/web/package-lock.json
+
+     - name: Install dependencies
+       working-directory: apps/web
+       run: npm ci
+
+     - name: Build web application
+       working-directory: apps/web
+       run: npm run build
