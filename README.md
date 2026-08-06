@@ -108,6 +108,7 @@ Quando não há evidência suficiente, o agente responde que a informação não
 - Docker
 - Docker Compose
 - Volumes persistentes para índice e dados de execução
+- Deploy na nuvem da Oracle (OCI) utilizando o OCI Compute
 
 ## Estrutura do repositório
 
@@ -194,7 +195,6 @@ CACHE_TTL_SECONDS=300
 MAX_RETRIES=3
 
 PARTNER_KNOWLEDGE_EMBEDDING_MODEL=embed-v4.0
-PARTNER_KNOWLEDGE_EMBEDDING_DIMENSION=1024
 PARTNER_KNOWLEDGE_QUERY_EMBEDDING_CACHE_SIZE=1024
 PARTNER_KNOWLEDGE_RELEVANCE_THRESHOLD=0.45
 
@@ -362,27 +362,6 @@ Exemplo de resposta:
 
 Os campos exatos podem variar de acordo com a versão da API e com o modelo utilizado.
 
-## Base documental
-
-Os documentos da organização fictícia ficam em:
-
-```text
-apps/api/media/cafeteria-documents/
-```
-
-A base foi planejada para representar conteúdos corporativos em diferentes formatos, incluindo PDF, DOCX, XLSX, CSV, Markdown, JSON e HTML.
-
-Os documentos devem preservar os padrões definidos para a Café Aurora:
-
-- nomes e códigos consistentes das unidades;
-- cargos e responsabilidades padronizados;
-- data de publicação e vigência;
-- versão do documento;
-- área responsável;
-- classificação de uso interno;
-- dados inteiramente fictícios;
-- ausência de senhas, dados bancários, médicos ou informações pessoais reais.
-
 ## Testes e qualidade
 
 ### Executar todos os testes da API
@@ -471,25 +450,6 @@ Como o frontend encaminha `/api` para o serviço privado `agent-api`, o navegado
 - O cache atual é local à instância da API.
 - O deploy via Compose não oferece escalabilidade horizontal automática.
 - O projeto representa uma empresa fictícia e não deve ser utilizado como fonte de políticas reais.
-
-## Contribuição
-
-1. Crie um fork do repositório.
-2. Crie uma branch para sua alteração:
-
-   ```bash
-   git checkout -b feat/minha-alteracao
-   ```
-
-3. Implemente a alteração e adicione testes.
-4. Execute a suíte de testes e o lint.
-5. Faça commits claros, preferencialmente seguindo [Conventional Commits](https://www.conventionalcommits.org/):
-
-   ```bash
-   git commit -m "feat: adiciona nova funcionalidade"
-   ```
-
-6. Abra um pull request descrevendo o problema, a solução e como a alteração foi validada.
 
 ## Licença
 

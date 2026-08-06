@@ -234,4 +234,8 @@ docs/adr
 .scratch/
 CONTEXT.md
 
+apps/web/.agents/
+apps/web/skills-lock.json
+plans/
+
 .DS_Store
