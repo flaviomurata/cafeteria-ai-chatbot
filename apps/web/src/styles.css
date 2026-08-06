@@ -43,6 +43,21 @@ button { -webkit-tap-highlight-color: transparent; }
   padding-inline: clamp(24px, 5vw, 80px);
 }
 
+.chat-area {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.chat-area.is-empty {
+  justify-content: center;
+  gap: 32px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-block: 24px calc(24px + clamp(24px, 8vh, 96px));
+}
+
 .hero { animation: rise-in 500ms cubic-bezier(.2, .8, .2, 1) both; }
 
 .kicker {
@@ -86,6 +101,14 @@ h1 {
 }
 
 .conversation.has-messages { justify-content: flex-start; }
+
+.chat-area.is-empty .conversation {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding-block: 0;
+}
+
+.chat-area.is-empty .status { display: none; }
 
 .welcome {
   width: min(100%, 620px);
@@ -141,8 +164,9 @@ h1 {
   box-shadow: 0 1px 2px rgba(41, 41, 41, .03);
   font-size: 14px;
   line-height: 20px;
-  animation: rise-in 240ms cubic-bezier(.2, .8, .2, 1) both;
 }
+
+.message.assistant { animation: rise-in 240ms cubic-bezier(.2, .8, .2, 1) both; }
 
 .message p { margin: 0; overflow-wrap: break-word; white-space: pre-wrap; }
 
