@@ -442,19 +442,6 @@ A configuração atual é adequada para uma única máquina com Docker Compose. 
 
 Como o frontend encaminha `/api` para o serviço privado `agent-api`, o navegador não precisa conhecer o hostname interno do container nem uma URL separada para o backend.
 
-## Limitações conhecidas
-
-- A qualidade das respostas depende diretamente da qualidade e atualização da base documental.
-- Alterações nos documentos exigem nova ingestão.
-- O sistema depende de serviços externos para geração e embeddings no modo live.
-- O cache atual é local à instância da API.
-- O deploy via Compose não oferece escalabilidade horizontal automática.
-- O projeto representa uma empresa fictícia e não deve ser utilizado como fonte de políticas reais.
-
 ## Licença
 
 Distribuído sob a licença MIT. Consulte o arquivo [LICENSE](LICENSE) para mais informações.
-
-## Autor
-
-Desenvolvido por [Flavio Murata](https://github.com/flaviomurata).
